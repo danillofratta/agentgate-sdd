@@ -47,7 +47,7 @@ These are future implementation tasks. No task is completed by this planning cha
 
 - [x] 6.1 Wire adapters to handler constructors only in `dependencies.py`, build the FastAPI app, and map feature-local endpoint.py/models.py HTTP adapters to explicit Commands/Queries with direct handler calls; verify no mediator/service locator or business logic in providers, handler tests substitute fake ports, and HTTPX covers status codes, no-arguments execution, simulation markers, and all three decisions.
 - [x] 6.2 Add adversarial API regression cases for prompt/role override fields, path traversal, SQL-like inputs, unregistered tools, approval replay, missing/invalid credentials, malformed JSON, and streamed oversized bodies; verify every case prevents unauthorized dispatch and preserves the ledger.
-- [ ] 6.3 Add credential and log-injection sentinel tests across validation, authentication, policy exceptions, storage failures, responses, logs, and audit output; verify secrets/raw injected strings/tracebacks never appear and structured records remain intact.
+- [x] 6.3 Add credential and log-injection sentinel tests across validation, authentication, policy exceptions, storage failures, responses, logs, and audit output; verify secrets/raw injected strings/tracebacks never appear and structured records remain intact.
 - [ ] 6.4 Deliver README, MIT license, local setup/demo commands, threat model, architecture layout/import table, CQRS use-case map, constructor-wiring example, future-integration boundaries, and scenario traceability; verify every scenario across all three specs maps to a named passing test or reproducible documentation check and the architecture adds no paid service or framework.
 
 ## 7. Final integration acceptance
