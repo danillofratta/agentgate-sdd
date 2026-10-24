@@ -1,9 +1,12 @@
+import json
 import sqlite3
 from typing import cast
 
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.entities.operation import Operation
 from agentgate.domain.exceptions.invalid_transition import InvalidTransition
+from agentgate.domain.value_objects.balance_arguments import BalanceArguments
+from agentgate.domain.value_objects.balance_result import BalanceResult
 from agentgate.domain.value_objects.decision import Decision
 from agentgate.domain.value_objects.idempotency_key import IdempotencyKey
 from agentgate.domain.value_objects.operation_id import OperationId
@@ -99,6 +102,48 @@ class SqliteOperationRepository:
         )
         if cursor.rowcount != 1:
             raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+
+    def save_execution(self, operation: Operation, result: BalanceResult) -> None:
+        if not self._connection.in_transaction:
+            raise StorageUnavailable
+        arguments = operation.request.arguments
+        if (
+            operation.state != OperationState.SUCCEEDED
+            or operation.policy.decision != Decision.ALLOW
+            or not isinstance(arguments, BalanceArguments)
+            or type(result) is not BalanceResult
+            or result.account_id != arguments.account_id
+        ):
+            raise InvalidTransition("INVALID_EXECUTION_RESULT")
+        result_json = json.dumps(
+            {
+                "account_id": result.account_id.value,
+                "balance_cents": result.balance_cents,
+                "currency": result.currency,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        cursor = self._connection.execute(
+            """UPDATE operations SET state='SUCCEEDED', result_json=?
+               WHERE id=? AND state='READY' AND result_json IS NULL
+               AND principal_id=? AND key=? AND request_json=? AND fingerprint=?
+               AND decision=? AND reason=? AND policy_version=? AND created_at=?""",
+            (
+                result_json,
+                operation.id.value,
+                operation.principal_id.value,
+                operation.key.value,
+                operation.request.canonical_json(),
+                operation.request.fingerprint.value,
+                operation.policy.decision.value,
+                operation.policy.reason.value,
+                operation.policy.version.value,
+                operation.created_at.isoformat(),
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise InvalidTransition("INVALID_OPERATION_TRANSITION")
 
     def add(self, operation: Operation) -> None:
         if not self._connection.in_transaction:
