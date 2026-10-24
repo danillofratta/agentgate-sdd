@@ -6,9 +6,11 @@ from agentgate.domain.value_objects.reason import Reason
 from agentgate.domain.value_objects.role import Role
 from agentgate.domain.value_objects.transfer_arguments import TransferArguments
 
+CURRENT_POLICY_VERSION = PolicyVersion("v1")
+
 
 def evaluate_policy(snapshot: PolicySnapshot) -> PolicyDecision:
-    version = PolicyVersion("v1")
+    version = CURRENT_POLICY_VERSION
 
     def deny(reason: Reason) -> PolicyDecision:
         return PolicyDecision(Decision.DENY, reason, version)

@@ -8,6 +8,7 @@ from agentgate.domain.exceptions.approval_binding_mismatch import ApprovalBindin
 from agentgate.domain.exceptions.approver_required import ApproverRequired
 from agentgate.domain.exceptions.invalid_transition import InvalidTransition
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
+from agentgate.domain.policies.operation_policy import CURRENT_POLICY_VERSION
 from agentgate.domain.value_objects.approval_deadline import ApprovalDeadline
 from agentgate.domain.value_objects.approval_decision import ApprovalDecision
 from agentgate.domain.value_objects.approval_state import ApprovalState
@@ -73,6 +74,8 @@ class Approval:
             raise InvariantViolation("INVALID_APPROVAL_DECISION")
         if self.state != ApprovalState.PENDING or self.deadline.expired(now):
             raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+        if self.operation.policy.version != CURRENT_POLICY_VERSION:
+            raise ApprovalBindingMismatch("APPROVAL_BINDING_MISMATCH")
         granted = decision == ApprovalDecision.APPROVE
         updated = copy(self)
         object.__setattr__(
@@ -88,7 +91,21 @@ class Approval:
         )
         return updated
 
-    def consume(self, operation: Operation, version: PolicyVersion, now: datetime) -> "Approval":
+    def consume(
+        self,
+        operation: Operation,
+        version: PolicyVersion,
+        now: datetime,
+        *,
+        principal: Principal,
+    ) -> "Approval":
+        """Validate exact binding and the trusted owner without dispatching anything."""
+        if (
+            not isinstance(principal, Principal)
+            or principal.role != Role.AGENT
+            or principal.id != self.operation.principal_id
+        ):
+            raise ApprovalBindingMismatch("APPROVAL_BINDING_MISMATCH")
         if (
             self.state != ApprovalState.GRANTED
             or self.deadline.expired(now)
@@ -101,6 +118,7 @@ class Approval:
             or operation != self.operation
             or not isinstance(version, PolicyVersion)
             or version != self.operation.policy.version
+            or version != CURRENT_POLICY_VERSION
         ):
             raise ApprovalBindingMismatch("APPROVAL_BINDING_MISMATCH")
         updated = copy(self)

@@ -197,7 +197,9 @@ def test_operation_rejects_untyped_constructor_inputs_and_identity_changes(opera
         setattr(operation, field, "untrusted")
 
 
-def test_approval_grant_and_consume_are_explicit_immutable_transitions(operation, approver, clock):
+def test_approval_grant_and_consume_are_explicit_immutable_transitions(
+    operation, approver, clock, principal
+):
     pending = Approval(operation)
     granted = pending.decide(approver, ApprovalDecision.APPROVE, clock.now())
     assert pending.state == ApprovalState.PENDING and pending.decision is None
@@ -205,7 +207,9 @@ def test_approval_grant_and_consume_are_explicit_immutable_transitions(operation
     assert granted.operation.state == OperationState.READY
     assert granted.operation.policy == operation.policy
     assert granted.approver_id == approver.id and granted.decided_at == clock.now()
-    consumed = granted.consume(granted.operation, PolicyVersion("v1"), clock.now())
+    consumed = granted.consume(
+        granted.operation, PolicyVersion("v1"), clock.now(), principal=principal
+    )
     assert consumed.state == ApprovalState.CONSUMED and consumed.consumed_at == clock.now()
     assert granted.state == ApprovalState.GRANTED
     with pytest.raises(FrozenInstanceError):
@@ -213,7 +217,7 @@ def test_approval_grant_and_consume_are_explicit_immutable_transitions(operation
 
 
 @pytest.mark.parametrize("decision", list(ApprovalDecision))
-def test_approval_cannot_be_decided_twice(operation, approver, clock, decision):
+def test_approval_cannot_be_decided_twice(operation, approver, clock, decision, principal):
     decided = Approval(operation).decide(approver, decision, clock.now())
     for next_decision in ApprovalDecision:
         with pytest.raises(InvariantViolation):
@@ -221,7 +225,9 @@ def test_approval_cannot_be_decided_twice(operation, approver, clock, decision):
     if decision == ApprovalDecision.REJECT:
         assert decided.operation.state == OperationState.REJECTED
         with pytest.raises(InvariantViolation):
-            decided.consume(decided.operation, PolicyVersion("v1"), clock.now())
+            decided.consume(
+                decided.operation, PolicyVersion("v1"), clock.now(), principal=principal
+            )
 
 
 def test_approval_requires_separate_trusted_approver(operation, principal, approver, clock):
@@ -232,11 +238,11 @@ def test_approval_requires_separate_trusted_approver(operation, principal, appro
     with pytest.raises(InvariantViolation):
         pending.decide(approver, "APPROVE", clock.now())
     with pytest.raises(InvariantViolation):
-        pending.consume(operation, PolicyVersion("v1"), clock.now())
+        pending.consume(operation, PolicyVersion("v1"), clock.now(), principal=principal)
 
 
 @pytest.mark.parametrize("offset", [-1, 0, 1])
-def test_approval_exact_expiry_for_pending_and_granted(operation, approver, offset):
+def test_approval_exact_expiry_for_pending_and_granted(operation, approver, offset, principal):
     pending = Approval(operation)
     granted = pending.decide(approver, ApprovalDecision.APPROVE, operation.created_at)
     now = pending.expires_at + timedelta(microseconds=offset)
@@ -245,7 +251,7 @@ def test_approval_exact_expiry_for_pending_and_granted(operation, approver, offs
             pending.decide(approver, ApprovalDecision.APPROVE, now).state == ApprovalState.GRANTED
         )
         assert (
-            granted.consume(granted.operation, PolicyVersion("v1"), now).state
+            granted.consume(granted.operation, PolicyVersion("v1"), now, principal=principal).state
             == ApprovalState.CONSUMED
         )
         with pytest.raises(InvariantViolation):
@@ -254,7 +260,7 @@ def test_approval_exact_expiry_for_pending_and_granted(operation, approver, offs
         with pytest.raises(InvariantViolation):
             pending.decide(approver, ApprovalDecision.APPROVE, now)
         with pytest.raises(InvariantViolation):
-            granted.consume(granted.operation, PolicyVersion("v1"), now)
+            granted.consume(granted.operation, PolicyVersion("v1"), now, principal=principal)
         for approval in (pending, granted):
             expired = approval.expire(now)
             assert expired.state == ApprovalState.EXPIRED
@@ -265,7 +271,7 @@ def test_approval_exact_expiry_for_pending_and_granted(operation, approver, offs
                 expired.expire(now)
 
 
-def test_approval_cannot_be_reused_for_changed_binding(operation, approver, clock):
+def test_approval_cannot_be_reused_for_changed_binding(operation, approver, clock, principal):
     granted = Approval(operation).decide(approver, ApprovalDecision.APPROVE, clock.now())
     bound = granted.operation
     changes = {
@@ -279,26 +285,28 @@ def test_approval_cannot_be_reused_for_changed_binding(operation, approver, cloc
     for field, value in changes.items():
         changed = replace(bound, **{field: value}).transition(OperationState.READY)
         with pytest.raises(InvariantViolation):
-            granted.consume(changed, PolicyVersion("v1"), clock.now())
+            granted.consume(changed, PolicyVersion("v1"), clock.now(), principal=principal)
     with pytest.raises(InvariantViolation):
-        granted.consume(bound, PolicyVersion("v2"), clock.now())
+        granted.consume(bound, PolicyVersion("v2"), clock.now(), principal=principal)
     with pytest.raises(InvariantViolation):
-        granted.consume(bound, "v1", clock.now())
-    consumed = granted.consume(bound, PolicyVersion("v1"), clock.now())
+        granted.consume(bound, "v1", clock.now(), principal=principal)
+    consumed = granted.consume(bound, PolicyVersion("v1"), clock.now(), principal=principal)
     with pytest.raises(InvariantViolation):
-        consumed.consume(bound, PolicyVersion("v1"), clock.now())
+        consumed.consume(bound, PolicyVersion("v1"), clock.now(), principal=principal)
     with pytest.raises(InvariantViolation):
         consumed.expire(consumed.expires_at)
 
 
-def test_approval_rejects_non_utc_or_backwards_transition_time(operation, approver, clock):
+def test_approval_rejects_non_utc_or_backwards_transition_time(
+    operation, approver, clock, principal
+):
     pending = Approval(operation)
     for now in (datetime(2026, 1, 1), "now", clock.now() - timedelta(seconds=1)):
         with pytest.raises(InvariantViolation):
             pending.decide(approver, ApprovalDecision.APPROVE, now)
     granted = pending.decide(approver, ApprovalDecision.APPROVE, clock.now() + timedelta(seconds=5))
     with pytest.raises(InvariantViolation):
-        granted.consume(granted.operation, PolicyVersion("v1"), clock.now())
+        granted.consume(granted.operation, PolicyVersion("v1"), clock.now(), principal=principal)
 
 
 def test_fingerprint_represents_exact_typed_request():

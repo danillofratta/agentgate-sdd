@@ -1,6 +1,7 @@
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import timedelta
 from threading import Barrier
 
 import pytest
@@ -116,10 +117,12 @@ def test_concurrent_decisions_have_exactly_one_winner(
 
 
 @pytest.mark.parametrize("decision", list(ApprovalDecision))
+@pytest.mark.parametrize("elapsed", [0, 299])
 def test_audit_constraint_failure_rolls_back_both_states(
-    database, operation, approver, clock, decision
+    database, operation, approver, clock, decision, elapsed
 ):
     use_case = setup(database, operation, clock)
+    clock.value += timedelta(seconds=elapsed)
     with sqlite3.connect(database) as connection:
         connection.execute("""CREATE TRIGGER fail_approval_audit BEFORE INSERT ON audit_events
             WHEN NEW.event_type='APPROVAL_DECIDED'
@@ -132,6 +135,19 @@ def test_audit_constraint_failure_rolls_back_both_states(
     with SqliteUnitOfWork(database) as work:
         assert work.approvals.get(operation.id) == Approval(operation)
         assert work.operations.get(operation.id) == operation
+
+
+@pytest.mark.parametrize("offset", [0, 1])
+@pytest.mark.parametrize("decision", list(ApprovalDecision))
+def test_expired_decision_has_no_partial_state_or_audit(
+    database, operation, approver, clock, offset, decision
+):
+    use_case = setup(database, operation, clock)
+    clock.value = operation.created_at + timedelta(seconds=300, microseconds=offset)
+    before = snapshot(database)
+    with pytest.raises(InvalidTransition):
+        use_case.handle(ApproveOperationCommand(approver, operation.id, decision))
+    assert snapshot(database) == before
 
 
 @pytest.mark.parametrize(

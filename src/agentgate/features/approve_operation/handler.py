@@ -4,6 +4,7 @@ from agentgate.application.ports.clock_gateway import ClockGateway
 from agentgate.application.ports.request_unit_of_work_factory import RequestUnitOfWorkFactory
 from agentgate.domain.exceptions.approval_binding_mismatch import ApprovalBindingMismatch
 from agentgate.domain.exceptions.invalid_transition import InvalidTransition
+from agentgate.domain.policies.operation_policy import CURRENT_POLICY_VERSION
 from agentgate.domain.value_objects.approval_state import ApprovalState
 from agentgate.domain.value_objects.decision import Decision
 from agentgate.domain.value_objects.operation_state import OperationState
@@ -38,6 +39,8 @@ class ApproveOperationHandler:
                 raise ApprovalBindingMismatch("APPROVAL_BINDING_MISMATCH")
             if approval.state != ApprovalState.PENDING:
                 raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+            if operation.policy.version != CURRENT_POLICY_VERSION:
+                raise ApprovalBindingMismatch("APPROVAL_BINDING_MISMATCH")
             decided = approval.decide(command.principal, command.decision, self._clock.now())
             work.operations.save_approval_decision(decided.operation)
             work.approvals.save_decision(decided)

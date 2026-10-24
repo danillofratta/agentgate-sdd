@@ -82,7 +82,9 @@ def test_request_fact_preserves_original_policy_and_time(operation, decision, re
 
 
 @pytest.mark.parametrize("decision", list(ApprovalDecision))
-def test_decision_fact_binds_exact_operation_and_retains_decision(operation, approver, decision):
+def test_decision_fact_binds_exact_operation_and_retains_decision(
+    operation, approver, decision, principal
+):
     pending = Approval(operation)
     now = operation.created_at + timedelta(seconds=1)
     decided = pending.decide(approver, decision, now)
@@ -104,7 +106,9 @@ def test_decision_fact_binds_exact_operation_and_retains_decision(operation, app
         pending.expire(pending.expires_at).decided_event()
     if decision == ApprovalDecision.APPROVE:
         assert (
-            decided.consume(decided.operation, operation.policy.version, now).decided_event()
+            decided.consume(
+                decided.operation, operation.policy.version, now, principal=principal
+            ).decided_event()
             == event
         )
         assert decided.expire(decided.expires_at).decided_event() == event
@@ -219,7 +223,9 @@ def test_typed_failures_preserve_base_contract_codes_and_original_state(
         (
             ApprovalBindingMismatch,
             "APPROVAL_BINDING_MISMATCH",
-            lambda: granted.consume(granted.operation, PolicyVersion("v2"), operation.created_at),
+            lambda: granted.consume(
+                granted.operation, PolicyVersion("v2"), operation.created_at, principal=principal
+            ),
         ),
         (
             InsufficientFunds,

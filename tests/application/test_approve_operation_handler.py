@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -156,3 +157,40 @@ def test_existing_submission_still_atomically_creates_pending(principal, clock):
     )
     assert work.pending == [Approval(result.operation)]
     assert work.commits == 1 and len(work.events) == 1
+
+
+@pytest.mark.parametrize("offset", [-1, 0, 1])
+@pytest.mark.parametrize("decision", list(ApprovalDecision))
+def test_fake_clock_approval_boundary(operation, approver, clock, offset, decision):
+    work = approval_work(operation)
+    clock.value = operation.created_at + timedelta(seconds=300, microseconds=offset)
+    use_case = ApproveOperationHandler(lambda: work, clock)
+    command = ApproveOperationCommand(approver, operation.id, decision)
+    if offset < 0:
+        result = use_case.handle(command)
+        assert result.approval.expires_at == operation.created_at + timedelta(seconds=300)
+        assert result.approval.operation.policy == operation.policy
+        assert work.events == [result.approval.decided_event()]
+        assert work.commits == 1
+    else:
+        with pytest.raises(InvalidTransition):
+            use_case.handle(command)
+        assert work.saved[operation.principal_id, operation.key] == operation
+        assert work.pending == [Approval(operation)]
+        assert not work.events and work.commits == 0
+
+
+@pytest.mark.parametrize("version", ["v2", "v999999999"])
+@pytest.mark.parametrize("decision", list(ApprovalDecision))
+def test_matching_unsupported_policy_rejected_by_handler(
+    operation, approver, clock, version, decision
+):
+    stale = replace(operation, policy=replace(operation.policy, version=PolicyVersion(version)))
+    work = approval_work(stale)
+    with pytest.raises(ApprovalBindingMismatch):
+        ApproveOperationHandler(lambda: work, clock).handle(
+            ApproveOperationCommand(approver, stale.id, decision)
+        )
+    assert work.pending == [Approval(stale)]
+    assert work.saved[stale.principal_id, stale.key] == stale
+    assert not work.events and work.commits == 0
