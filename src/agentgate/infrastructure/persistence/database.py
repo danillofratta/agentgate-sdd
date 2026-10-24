@@ -2,7 +2,7 @@ import sqlite3
 
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 
-SCHEMA = (
+LEGACY_SCHEMA = (
     """CREATE TABLE accounts (
         id TEXT PRIMARY KEY, balance_cents INTEGER NOT NULL
         CHECK(typeof(balance_cents)='integer' AND balance_cents >= 0))""",
@@ -25,6 +25,12 @@ SCHEMA = (
         event_type TEXT NOT NULL)""",
 )
 
+SCHEMA = (
+    LEGACY_SCHEMA[0],
+    LEGACY_SCHEMA[1].replace("state TEXT NOT NULL,", "state TEXT NOT NULL, result_json TEXT,"),
+    *LEGACY_SCHEMA[2:],
+)
+
 
 def connect(path: str) -> sqlite3.Connection:
     try:
@@ -41,16 +47,17 @@ def initialize(path: str, *, seed: bool = False) -> None:
     try:
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1):
+        if version not in (0, 1, 2):
             raise StorageUnavailable
         objects = connection.execute(
             "SELECT type, name, sql FROM sqlite_schema WHERE substr(name, 1, 7) != 'sqlite_'"
         ).fetchall()
         if version == 0 and objects:
             raise StorageUnavailable
-        if version == 1:
+        if version in (1, 2):
             expected = {
-                ("table", statement.split()[2]): " ".join(statement.split()) for statement in SCHEMA
+                ("table", statement.split()[2]): " ".join(statement.split())
+                for statement in (LEGACY_SCHEMA if version == 1 else SCHEMA)
             }
             actual = {
                 (row["type"], row["name"]): " ".join((row["sql"] or "").split()) for row in objects
@@ -60,7 +67,11 @@ def initialize(path: str, *, seed: bool = False) -> None:
         if version == 0:
             for statement in SCHEMA:
                 connection.execute(statement)
-            connection.execute("PRAGMA user_version = 1")
+            connection.execute("PRAGMA user_version = 2")
+        if version == 1:
+            # Inspection requires storage for results; commands remain separately scoped.
+            connection.execute("ALTER TABLE operations ADD COLUMN result_json TEXT")
+            connection.execute("PRAGMA user_version = 2")
         if seed:
             connection.executemany(
                 "INSERT OR IGNORE INTO accounts(id, balance_cents) VALUES (?, ?)",

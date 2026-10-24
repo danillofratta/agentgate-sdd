@@ -11,6 +11,7 @@ from agentgate.domain.value_objects.idempotency_key import IdempotencyKey
 from agentgate.domain.value_objects.money import Money
 from agentgate.domain.value_objects.operation_id import OperationId
 from agentgate.domain.value_objects.operation_request import OperationRequest
+from agentgate.domain.value_objects.operation_state import OperationState
 from agentgate.domain.value_objects.policy_decision import PolicyDecision
 from agentgate.domain.value_objects.policy_version import PolicyVersion
 from agentgate.domain.value_objects.principal_id import PrincipalId
@@ -19,14 +20,14 @@ from agentgate.domain.value_objects.tool import Tool
 from agentgate.domain.value_objects.transfer_arguments import TransferArguments
 
 
-def hydrate(row: sqlite3.Row) -> Operation:
+def hydrate(row: sqlite3.Row, *, stored_state: bool = False) -> Operation:
     try:
-        return _hydrate(row)
+        return _hydrate(row, stored_state=stored_state)
     except (ValueError, TypeError, KeyError, IndexError):
         raise StorageUnavailable from None
 
 
-def _hydrate(row: sqlite3.Row) -> Operation:
+def _hydrate(row: sqlite3.Row, *, stored_state: bool) -> Operation:
     payload = json.loads(row["request_json"])
     args = payload["arguments"]
     tool = Tool(payload["tool"])
@@ -53,7 +54,17 @@ def _hydrate(row: sqlite3.Row) -> Operation:
         ),
         datetime.fromisoformat(row["created_at"]),
     )
-    # Only request-time states are supported by this persistence increment.
-    if operation.state.value != row["state"]:
+    state = OperationState(row["state"])
+    if stored_state and state != operation.state:
+        # Hydrate through the domain lifecycle without replaying commands or policy.
+        if operation.state == OperationState.PENDING_APPROVAL and state in {
+            OperationState.SUCCEEDED,
+            OperationState.FAILED,
+            OperationState.TIMED_OUT,
+            OperationState.DENIED,
+        }:
+            operation = operation.transition(OperationState.READY)
+        operation = operation.transition(state)
+    elif operation.state != state:
         raise StorageUnavailable
     return operation
