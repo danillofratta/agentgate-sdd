@@ -6,6 +6,8 @@ from pathlib import Path
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.events.approval_decided_event import ApprovalDecidedEvent
 from agentgate.domain.events.approval_expired_event import ApprovalExpiredEvent
+from agentgate.domain.events.operation_dispatched_event import OperationDispatchedEvent
+from agentgate.domain.events.operation_executed_event import OperationExecutedEvent
 from agentgate.domain.events.operation_requested_event import OperationRequestedEvent
 from agentgate.domain.value_objects.approval_decision import ApprovalDecision
 from agentgate.domain.value_objects.audit_page import AuditPage
@@ -21,6 +23,26 @@ from agentgate.domain.value_objects.tool import Tool
 
 
 def _hydrate(row: sqlite3.Row) -> AuditRecord:
+    if row["event_type"] in {"OPERATION_EXECUTED", "OPERATION_DISPATCHED"}:
+        succeeded = row["event_type"] == "OPERATION_EXECUTED"
+        if (
+            row["decision"] != ("SUCCEEDED" if succeeded else "ALLOW")
+            or row["reason"] != ("EXECUTION_SUCCEEDED" if succeeded else "DISPATCH_AUTHORIZED")
+            or row["approver_id"] is not None
+        ):
+            raise StorageUnavailable
+        event_type = OperationExecutedEvent if succeeded else OperationDispatchedEvent
+        return AuditRecord(
+            row["id"],
+            event_type(
+                OperationId(row["operation_id"]),
+                PrincipalId(row["principal_id"]),
+                Tool(row["tool"]),
+                RequestFingerprint(row["fingerprint"]),
+                PolicyVersion(row["policy_version"]),
+                datetime.fromisoformat(row["occurred_at"]),
+            ),
+        )
     if row["event_type"] == "APPROVAL_EXPIRED":
         if (
             row["decision"] != "EXPIRED"

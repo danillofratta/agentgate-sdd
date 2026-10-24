@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, Query
 from agentgate.dependencies import get_list_audit_handler, get_principal
 from agentgate.domain.events.approval_decided_event import ApprovalDecidedEvent
 from agentgate.domain.events.approval_expired_event import ApprovalExpiredEvent
+from agentgate.domain.events.operation_dispatched_event import OperationDispatchedEvent
+from agentgate.domain.events.operation_executed_event import OperationExecutedEvent
 from agentgate.domain.events.operation_requested_event import OperationRequestedEvent
 from agentgate.domain.value_objects.principal import Principal
 from agentgate.features.list_audit.handler import ListAuditHandler
@@ -30,14 +32,22 @@ def list_audit(
                 principal_id=record.event.principal_id.value,
                 tool=record.event.tool.value,
                 decision=(
-                    "EXPIRED"
+                    "SUCCEEDED"
+                    if isinstance(record.event, OperationExecutedEvent)
+                    else "ALLOW"
+                    if isinstance(record.event, OperationDispatchedEvent)
+                    else "EXPIRED"
                     if isinstance(record.event, ApprovalExpiredEvent)
                     else record.event.policy.decision.value
                     if isinstance(record.event, OperationRequestedEvent)
                     else record.event.decision.value
                 ),
                 reason=(
-                    "APPROVAL_EXPIRED"
+                    "EXECUTION_SUCCEEDED"
+                    if isinstance(record.event, OperationExecutedEvent)
+                    else "DISPATCH_AUTHORIZED"
+                    if isinstance(record.event, OperationDispatchedEvent)
+                    else "APPROVAL_EXPIRED"
                     if isinstance(record.event, ApprovalExpiredEvent)
                     else record.event.policy.reason.value
                     if isinstance(record.event, OperationRequestedEvent)
@@ -51,7 +61,11 @@ def list_audit(
                 ),
                 occurred_at=record.event.occurred_at,
                 event_type=(
-                    "APPROVAL_EXPIRED"
+                    "OPERATION_EXECUTED"
+                    if isinstance(record.event, OperationExecutedEvent)
+                    else "OPERATION_DISPATCHED"
+                    if isinstance(record.event, OperationDispatchedEvent)
+                    else "APPROVAL_EXPIRED"
                     if isinstance(record.event, ApprovalExpiredEvent)
                     else "OPERATION_REQUESTED"
                     if isinstance(record.event, OperationRequestedEvent)
