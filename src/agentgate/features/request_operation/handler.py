@@ -8,11 +8,11 @@ from agentgate.application.ports.request_unit_of_work_factory import (
 )
 from agentgate.domain.entities.approval import Approval
 from agentgate.domain.entities.operation import Operation
+from agentgate.domain.policies.operation_policy import CURRENT_POLICY_VERSION
 from agentgate.domain.value_objects.decision import Decision
 from agentgate.domain.value_objects.operation_id import OperationId
 from agentgate.domain.value_objects.policy_decision import PolicyDecision
 from agentgate.domain.value_objects.policy_snapshot import PolicySnapshot
-from agentgate.domain.value_objects.policy_version import PolicyVersion
 from agentgate.domain.value_objects.reason import Reason
 from agentgate.domain.value_objects.role import Role
 from agentgate.features.request_operation.command import (
@@ -48,11 +48,16 @@ class RequestOperationHandler:
             try:
                 snapshot = PolicySnapshot(command.principal, command.request, work.accounts.facts())
                 policy = self._policy.evaluate(snapshot)
-                if not isinstance(policy, PolicyDecision) or policy.version != PolicyVersion("v1"):
+                if (
+                    not isinstance(policy, PolicyDecision)
+                    or policy.version != CURRENT_POLICY_VERSION
+                ):
                     raise ValueError("UNSUPPORTED_POLICY")
             except Exception:
                 # Uncertain authorization must deny without exposing exception details.
-                policy = PolicyDecision(Decision.DENY, Reason.POLICY_UNCERTAIN, PolicyVersion("v1"))
+                policy = PolicyDecision(
+                    Decision.DENY, Reason.POLICY_UNCERTAIN, CURRENT_POLICY_VERSION
+                )
             operation = Operation(
                 OperationId(self._ids.next_id()),
                 command.principal.id,

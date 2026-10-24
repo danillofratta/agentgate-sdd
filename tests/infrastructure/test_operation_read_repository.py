@@ -9,6 +9,7 @@ import pytest
 from agentgate.application.exceptions.not_found import NotFound
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.value_objects.account_id import AccountId
+from agentgate.domain.value_objects.approval_decision import ApprovalDecision
 from agentgate.domain.value_objects.approval_state import ApprovalState
 from agentgate.domain.value_objects.balance_arguments import BalanceArguments
 from agentgate.domain.value_objects.balance_result import BalanceResult
@@ -19,6 +20,9 @@ from agentgate.domain.value_objects.operation_state import OperationState
 from agentgate.domain.value_objects.policy_decision import PolicyDecision
 from agentgate.domain.value_objects.principal_id import PrincipalId
 from agentgate.domain.value_objects.reason import Reason
+from agentgate.domain.value_objects.role import Role
+from agentgate.features.approve_operation.command import ApproveOperationCommand
+from agentgate.features.approve_operation.handler import ApproveOperationHandler
 from agentgate.features.get_operation.handler import GetOperationHandler
 from agentgate.features.get_operation.query import GetOperationQuery
 from agentgate.infrastructure.persistence.database import LEGACY_SCHEMA, initialize
@@ -36,12 +40,19 @@ operation = operation_fixture
 
 
 @pytest.mark.parametrize("elapsed", [300, 301, 86400])
+@pytest.mark.parametrize("granted", [False, True])
 def test_repeated_reads_after_expiry_leave_database_and_audit_unchanged(
-    database, principal, operation, clock, monkeypatch, elapsed
+    database, principal, operation, clock, monkeypatch, elapsed, granted
 ):
     with SqliteUnitOfWork(database) as work:
         persist(work, operation)
         work.commit()
+    if granted:
+        approver = replace(principal, id=PrincipalId("principal-human"), role=Role.APPROVER)
+        result = ApproveOperationHandler(lambda: SqliteUnitOfWork(database), clock).handle(
+            ApproveOperationCommand(approver, operation.id, ApprovalDecision.APPROVE)
+        )
+        operation = result.approval.operation
     before = snapshot(database)
     before_bytes = Path(database).read_bytes()
     clock.value += timedelta(seconds=elapsed)
@@ -65,7 +76,9 @@ def test_repeated_reads_after_expiry_leave_database_and_audit_unchanged(
         for _ in range(3):
             result = handler.handle(GetOperationQuery(principal, operation.id))
             assert result.operation == operation
-            assert result.approval.state == ApprovalState.PENDING
+            assert result.approval.state == (
+                ApprovalState.GRANTED if granted else ApprovalState.PENDING
+            )
             assert result.approval.expires_at <= clock.now()
             assert result.result is None
             with pytest.raises(NotFound):
