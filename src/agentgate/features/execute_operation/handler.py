@@ -1,6 +1,8 @@
 from agentgate.application.exceptions.execution_unavailable import ExecutionUnavailable
 from agentgate.application.exceptions.forbidden import Forbidden
 from agentgate.application.exceptions.not_found import NotFound
+from agentgate.application.exceptions.transient_storage_lock import TransientStorageLock
+from agentgate.application.execution_deadline import ExecutionDeadline
 from agentgate.application.ports.clock_gateway import ClockGateway
 from agentgate.application.ports.policy_evaluator_gateway import PolicyEvaluatorGateway
 from agentgate.application.ports.principal_gateway import PrincipalGateway
@@ -33,7 +35,23 @@ class ExecuteOperationHandler:
     def handle(self, command: ExecuteOperationCommand) -> ExecuteOperationResult:
         if command.principal.role != Role.AGENT:
             raise Forbidden
-        with self._unit_of_work() as work:
+        deadline = self._harness.start_deadline()
+        for attempt in range(2):
+            deadline.remaining()
+            try:
+                return self._attempt(command, deadline)
+            except TransientStorageLock:
+                if attempt == 1:
+                    raise
+                self._harness.retry_delay(deadline)
+        raise AssertionError("unreachable")
+
+    def _attempt(
+        self, command: ExecuteOperationCommand, deadline: ExecutionDeadline
+    ) -> ExecuteOperationResult:
+        transaction = self._unit_of_work()
+        transaction.set_deadline(deadline)
+        with transaction as work:
             operation = work.operations.get(command.operation_id)
             if (
                 not isinstance(operation, Operation)
@@ -56,6 +74,7 @@ class ExecuteOperationHandler:
                 if stored is None:
                     raise ExecutionUnavailable
                 return ExecuteOperationResult(operation, stored)
-            result = self._harness.run(work, operation, current)
+            result = self._harness.run(work, operation, current, deadline)
+            deadline.remaining()
             work.commit()
             return result

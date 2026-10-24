@@ -1,6 +1,7 @@
 import sqlite3
 
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
+from agentgate.infrastructure.persistence.deadline_connection import DeadlineConnection
 
 LEGACY_SCHEMA = (
     """CREATE TABLE accounts (
@@ -96,7 +97,9 @@ SCHEMA = (
 
 def connect(path: str) -> sqlite3.Connection:
     try:
-        connection = sqlite3.connect(path, timeout=0.05, isolation_level=None)
+        connection = sqlite3.connect(
+            path, timeout=0.05, isolation_level=None, factory=DeadlineConnection
+        )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
