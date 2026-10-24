@@ -1,0 +1,59 @@
+import sqlite3
+
+from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
+
+
+def connect(path: str) -> sqlite3.Connection:
+    try:
+        connection = sqlite3.connect(path, timeout=0.05, isolation_level=None)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+    except sqlite3.Error:
+        raise StorageUnavailable from None
+
+
+def initialize(path: str, *, seed: bool = False) -> None:
+    connection = connect(path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version not in (0, 1):
+            raise StorageUnavailable
+        if version == 0:
+            statements = (
+                """CREATE TABLE accounts (
+                    id TEXT PRIMARY KEY, balance_cents INTEGER NOT NULL
+                    CHECK(typeof(balance_cents)='integer' AND balance_cents >= 0))""",
+                """CREATE TABLE operations (
+                    id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, key TEXT NOT NULL,
+                    request_json TEXT NOT NULL, fingerprint TEXT NOT NULL, decision TEXT NOT NULL,
+                    reason TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
+                    state TEXT NOT NULL, UNIQUE(principal_id, key))""",
+                """CREATE TABLE approvals (
+                    operation_id TEXT PRIMARY KEY REFERENCES operations(id),
+                    principal_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+                    policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status='PENDING'))""",
+                """CREATE TABLE audit_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_id TEXT NOT NULL REFERENCES operations(id),
+                    principal_id TEXT NOT NULL,
+                    tool TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL,
+                    policy_version TEXT NOT NULL, occurred_at TEXT NOT NULL,
+                    event_type TEXT NOT NULL)""",
+            )
+            for statement in statements:
+                connection.execute(statement)
+            connection.execute("PRAGMA user_version = 1")
+        if seed:
+            connection.executemany(
+                "INSERT OR IGNORE INTO accounts(id, balance_cents) VALUES (?, ?)",
+                [("acct-alice", 1000000), ("acct-bob", 1000000)],
+            )
+        connection.commit()
+    except sqlite3.Error:
+        connection.rollback()
+        raise StorageUnavailable from None
+    finally:
+        connection.close()

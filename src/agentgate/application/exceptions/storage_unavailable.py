@@ -1,0 +1,2 @@
+class StorageUnavailable(Exception):
+    pass

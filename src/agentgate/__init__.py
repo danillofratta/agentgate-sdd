@@ -1,0 +1,1 @@
+"""AgentGate: simulation-only authorization."""

@@ -1,0 +1,2 @@
+class IdempotencyConflict(Exception):
+    pass
