@@ -32,3 +32,9 @@ class LocalCredentialGateway:
         if approver:
             return self._approver
         return None
+
+    def get_principal(self, principal_id: PrincipalId) -> Principal | None:
+        for principal in (self._agent, self._approver):
+            if principal.id == principal_id:
+                return principal
+        return None

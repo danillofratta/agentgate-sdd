@@ -52,7 +52,7 @@ V3_SCHEMA = (
     ),
 )
 
-SCHEMA = (
+V4_SCHEMA = (
     *V3_SCHEMA[:2],
     """CREATE TABLE approvals (
         operation_id TEXT PRIMARY KEY REFERENCES operations(id),
@@ -71,6 +71,28 @@ SCHEMA = (
     V3_SCHEMA[3],
 )
 
+SCHEMA = (
+    V4_SCHEMA[0],
+    V4_SCHEMA[1].replace("result_json TEXT,", "result_json TEXT, authorization_json TEXT,"),
+    """CREATE TABLE approvals (
+        operation_id TEXT PRIMARY KEY REFERENCES operations(id),
+        principal_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+        policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL, status TEXT NOT NULL
+        CHECK(status IN ('PENDING','GRANTED','REJECTED','EXPIRED','CONSUMED')),
+        decision TEXT, approver_id TEXT, decided_at TEXT, consumed_at TEXT,
+        CHECK((status='CONSUMED' AND consumed_at IS NOT NULL) OR
+              (status!='CONSUMED' AND consumed_at IS NULL)),
+        CHECK((status IN ('PENDING','EXPIRED') AND decision IS NULL
+               AND approver_id IS NULL AND decided_at IS NULL) OR
+              (status IN ('GRANTED','REJECTED','EXPIRED','CONSUMED') AND decision IS NOT NULL
+               AND approver_id IS NOT NULL AND decided_at IS NOT NULL
+               AND approver_id != principal_id AND
+               ((status IN ('GRANTED','EXPIRED','CONSUMED') AND decision='APPROVE') OR
+                (status='REJECTED' AND decision='REJECT')))))""",
+    V4_SCHEMA[3],
+)
+
 
 def connect(path: str) -> sqlite3.Connection:
     try:
@@ -87,17 +109,23 @@ def initialize(path: str, *, seed: bool = False) -> None:
     try:
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4):
+        if version not in (0, 1, 2, 3, 4, 5):
             raise StorageUnavailable
         objects = connection.execute(
             "SELECT type, name, sql FROM sqlite_schema WHERE substr(name, 1, 7) != 'sqlite_'"
         ).fetchall()
         if version == 0 and objects:
             raise StorageUnavailable
-        if version in (1, 2, 3, 4):
+        if version in (1, 2, 3, 4, 5):
             expected = {
                 ("table", statement.split()[2]): " ".join(statement.split())
-                for statement in {1: LEGACY_SCHEMA, 2: V2_SCHEMA, 3: V3_SCHEMA, 4: SCHEMA}[version]
+                for statement in {
+                    1: LEGACY_SCHEMA,
+                    2: V2_SCHEMA,
+                    3: V3_SCHEMA,
+                    4: V4_SCHEMA,
+                    5: SCHEMA,
+                }[version]
             }
             actual = {
                 (row["type"], row["name"]): " ".join((row["sql"] or "").split()) for row in objects
@@ -107,7 +135,7 @@ def initialize(path: str, *, seed: bool = False) -> None:
         if version == 0:
             for statement in SCHEMA:
                 connection.execute(statement)
-            connection.execute("PRAGMA user_version = 4")
+            connection.execute("PRAGMA user_version = 5")
         if version == 1:
             # Inspection requires storage for results; commands remain separately scoped.
             connection.execute("ALTER TABLE operations ADD COLUMN result_json TEXT")
@@ -126,10 +154,21 @@ def initialize(path: str, *, seed: bool = False) -> None:
             connection.execute("PRAGMA user_version = 3")
         if version in (1, 2, 3):
             connection.execute("ALTER TABLE approvals RENAME TO previous_approvals")
-            connection.execute(SCHEMA[2])
+            connection.execute(V4_SCHEMA[2])
             connection.execute("INSERT INTO approvals SELECT * FROM previous_approvals")
             connection.execute("DROP TABLE previous_approvals")
             connection.execute("PRAGMA user_version = 4")
+        if version in (1, 2, 3, 4):
+            connection.execute("ALTER TABLE operations ADD COLUMN authorization_json TEXT")
+            connection.execute("ALTER TABLE approvals RENAME TO previous_approvals")
+            connection.execute(SCHEMA[2])
+            connection.execute(
+                """INSERT INTO approvals(operation_id, principal_id, fingerprint, policy_version,
+                   created_at, expires_at, status, decision, approver_id, decided_at)
+                   SELECT * FROM previous_approvals"""
+            )
+            connection.execute("DROP TABLE previous_approvals")
+            connection.execute("PRAGMA user_version = 5")
         if seed:
             connection.executemany(
                 "INSERT OR IGNORE INTO accounts(id, balance_cents) VALUES (?, ?)",

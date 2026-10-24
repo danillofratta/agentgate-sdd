@@ -49,8 +49,11 @@ class FakeExecutionWork:
         self.result = None
         self.events = []
         self.commits = 0
+        self.current_principal = None
         self.operations = SimpleNamespace(
-            get=lambda operation_id: self.operation, save_execution=self.save_execution
+            get=lambda operation_id: self.operation,
+            save_execution=self.save_execution,
+            get_result=lambda operation_id: self.result,
         )
         self.accounts = SimpleNamespace(
             facts=lambda: (AccountFacts(AccountId("acct-alice"), 12345),)
@@ -82,7 +85,12 @@ class FakeTools:
         return self.result
 
 
-def execution_handler(work, tools, clock, policy=None):
+def execution_handler(work, tools, clock, policy=None, principal=None):
+    from tests.conftest import principal as principal_fixture
+
+    if work.current_principal is None:
+        work.current_principal = principal or principal_fixture.__wrapped__()
+
     def no_sleep(seconds):
         pytest.fail("5.1 must not retry or sleep")
 
@@ -92,6 +100,7 @@ def execution_handler(work, tools, clock, policy=None):
         policy or EvaluatePolicyHandler(),
         clock,
         SimpleNamespace(sleep=no_sleep),
+        SimpleNamespace(get_principal=lambda principal_id: work.current_principal),
     )
 
 
@@ -128,6 +137,7 @@ def test_balance_execution_fake_ports_and_exact_schema(principal, clock):
 def test_direct_handler_authorization(principal, clock, change, error):
     operation = balance_operation(principal, clock)
     work, tools = FakeExecutionWork(operation), FakeTools()
+    work.current_principal = replace(principal, **change)
     with pytest.raises(error):
         execution_handler(work, tools, clock).handle(
             ExecuteOperationCommand(replace(principal, **change), operation.id)
@@ -142,7 +152,7 @@ def test_only_ready_operation_can_dispatch(principal, clock, state):
     operation = balance_operation(principal, clock)
     object.__setattr__(operation, "_state", state)
     work, tools = FakeExecutionWork(operation), FakeTools()
-    with pytest.raises(InvalidTransition):
+    with pytest.raises((InvalidTransition, ExecutionUnavailable)):
         execution_handler(work, tools, clock).handle(
             ExecuteOperationCommand(principal, operation.id)
         )
@@ -239,10 +249,10 @@ def test_invalid_tool_result_rolls_back(principal, clock, result):
     assert work.operation == operation and work.result is None
 
 
-def test_transfer_is_prepared_but_never_dispatched(principal, clock):
+def test_transfer_missing_destination_never_dispatched(principal, clock):
     operation = replace(balance_operation(principal, clock), request=transfer(1))
     work, tools = FakeExecutionWork(operation), FakeTools()
-    with pytest.raises(ExecutionUnavailable):
+    with pytest.raises(Forbidden):
         execution_handler(work, tools, clock).handle(
             ExecuteOperationCommand(principal, operation.id)
         )

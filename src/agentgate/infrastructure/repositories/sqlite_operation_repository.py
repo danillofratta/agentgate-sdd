@@ -12,10 +12,12 @@ from agentgate.domain.value_objects.idempotency_key import IdempotencyKey
 from agentgate.domain.value_objects.operation_id import OperationId
 from agentgate.domain.value_objects.operation_state import OperationState
 from agentgate.domain.value_objects.principal_id import PrincipalId
+from agentgate.domain.value_objects.transfer_arguments import TransferArguments
 from agentgate.infrastructure.repositories.operation_mapper import hydrate
 from agentgate.infrastructure.repositories.sqlite_approval_repository import (
     SqliteApprovalRepository,
 )
+from agentgate.infrastructure.repositories.sqlite_operation_read_repository import _result
 
 
 class SqliteOperationRepository:
@@ -71,7 +73,17 @@ class SqliteOperationRepository:
             and operation.state != OperationState.PENDING_APPROVAL
         ):
             approval = SqliteApprovalRepository(self._connection).get(operation.id)
-            if approval is None or approval.operation != operation:
+            if approval is None or (
+                approval.operation != operation
+                and not (
+                    operation.state == OperationState.SUCCEEDED
+                    and operation.execution_authorization is not None
+                    and approval.operation.authorize_execution(
+                        operation.execution_authorization
+                    ).transition(OperationState.SUCCEEDED)
+                    == operation
+                )
+            ):
                 raise StorageUnavailable
         return operation
 
@@ -103,16 +115,34 @@ class SqliteOperationRepository:
         if cursor.rowcount != 1:
             raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
 
-    def save_execution(self, operation: Operation, result: BalanceResult) -> None:
+    def get_result(self, operation_id: OperationId) -> BalanceResult | TransferArguments | None:
+        row = self._connection.execute(
+            "SELECT * FROM operations WHERE id=?", (operation_id.value,)
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            return _result(hydrate(row, stored_state=True), row["result_json"])
+        except (ValueError, TypeError, KeyError, IndexError):
+            raise StorageUnavailable from None
+
+    def save_execution(
+        self, operation: Operation, result: BalanceResult | TransferArguments
+    ) -> None:
         if not self._connection.in_transaction:
             raise StorageUnavailable
         arguments = operation.request.arguments
         if (
             operation.state != OperationState.SUCCEEDED
-            or operation.policy.decision != Decision.ALLOW
-            or not isinstance(arguments, BalanceArguments)
-            or type(result) is not BalanceResult
-            or result.account_id != arguments.account_id
+            or operation.execution_authorization is None
+            or not (
+                (
+                    isinstance(arguments, BalanceArguments)
+                    and type(result) is BalanceResult
+                    and result.account_id == arguments.account_id
+                )
+                or (type(result) is TransferArguments and result == arguments)
+            )
         ):
             raise InvalidTransition("INVALID_EXECUTION_RESULT")
         result_json = json.dumps(
@@ -120,17 +150,32 @@ class SqliteOperationRepository:
                 "account_id": result.account_id.value,
                 "balance_cents": result.balance_cents,
                 "currency": result.currency,
+            }
+            if isinstance(result, BalanceResult)
+            else {
+                "source_account_id": result.source_account_id.value,
+                "destination_account_id": result.destination_account_id.value,
+                "amount_cents": result.amount.cents,
+                "currency": result.amount.currency,
             },
             sort_keys=True,
             separators=(",", ":"),
         )
         cursor = self._connection.execute(
-            """UPDATE operations SET state='SUCCEEDED', result_json=?
+            """UPDATE operations SET state='SUCCEEDED', result_json=?, authorization_json=?
                WHERE id=? AND state='READY' AND result_json IS NULL
                AND principal_id=? AND key=? AND request_json=? AND fingerprint=?
                AND decision=? AND reason=? AND policy_version=? AND created_at=?""",
             (
                 result_json,
+                json.dumps(
+                    {
+                        "decision": operation.execution_authorization.decision.value,
+                        "reason": operation.execution_authorization.reason.value,
+                        "version": operation.execution_authorization.version.value,
+                    },
+                    sort_keys=True,
+                ),
                 operation.id.value,
                 operation.principal_id.value,
                 operation.key.value,

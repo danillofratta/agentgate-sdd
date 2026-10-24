@@ -8,7 +8,6 @@ from agentgate.application.exceptions.execution_unavailable import ExecutionUnav
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.events.operation_dispatched_event import OperationDispatchedEvent
 from agentgate.domain.events.operation_executed_event import OperationExecutedEvent
-from agentgate.domain.exceptions.invalid_transition import InvalidTransition
 from agentgate.domain.value_objects.account_id import AccountId
 from agentgate.domain.value_objects.audit_page import AuditPage
 from agentgate.domain.value_objects.balance_result import BalanceResult
@@ -43,12 +42,15 @@ def seed_operation(database, operation):
 
 
 def executor(database, clock, factory=None):
+    from tests.conftest import principal as principal_fixture
+
     return ExecuteOperationHandler(
         factory or (lambda: SqliteUnitOfWork(database)),
         registry(),
         EvaluatePolicyHandler(),
         clock,
         SimpleNamespace(sleep=lambda seconds: pytest.fail("unexpected sleep")),
+        SimpleNamespace(get_principal=lambda principal_id: principal_fixture.__wrapped__()),
     )
 
 
@@ -91,9 +93,9 @@ def test_offline_balance_execution_durable_after_reopen(database, principal, clo
     assert (
         events[1].event.fingerprint == events[2].event.fingerprint == operation.request.fingerprint
     )
-    # Terminal replay is task 5.2; this increment refuses to redispatch.
-    with pytest.raises(InvalidTransition):
-        executor(database, clock).handle(ExecuteOperationCommand(principal, operation.id))
+    assert (
+        executor(database, clock).handle(ExecuteOperationCommand(principal, operation.id)) == result
+    )
     assert balances(database) == before
     assert SqliteAuditReadRepository(database).list(AuditPage()) == events
 
@@ -124,18 +126,6 @@ def test_execution_evidence_failure_rolls_back(database, principal, clock, failu
     stored = SqliteOperationReadRepository(database).get(operation.id)
     assert stored.operation == operation and stored.result is None
     assert balances(database) == before
-    assert len(SqliteAuditReadRepository(database).list(AuditPage())) == 1
-
-
-def test_transfer_placeholder_preserves_database(database, principal, clock):
-    operation = replace(balance_operation(principal, clock), request=transfer(1))
-    seed_operation(database, operation)
-    before = balances(database)
-    with pytest.raises(ExecutionUnavailable):
-        executor(database, clock).handle(ExecuteOperationCommand(principal, operation.id))
-    assert balances(database) == before
-    stored = SqliteOperationReadRepository(database).get(operation.id)
-    assert stored.operation == operation and stored.result is None
     assert len(SqliteAuditReadRepository(database).list(AuditPage())) == 1
 
 
