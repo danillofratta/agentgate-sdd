@@ -1,5 +1,6 @@
 import sqlite3
 
+from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.entities.approval import Approval
 
 
@@ -8,6 +9,8 @@ class SqliteApprovalRepository:
         self._connection = connection
 
     def add(self, approval: Approval) -> None:
+        if not self._connection.in_transaction:
+            raise StorageUnavailable
         operation = approval.operation
         self._connection.execute(
             """INSERT INTO approvals(operation_id, principal_id, fingerprint, policy_version,

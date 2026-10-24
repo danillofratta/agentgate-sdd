@@ -2,6 +2,29 @@ import sqlite3
 
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 
+SCHEMA = (
+    """CREATE TABLE accounts (
+        id TEXT PRIMARY KEY, balance_cents INTEGER NOT NULL
+        CHECK(typeof(balance_cents)='integer' AND balance_cents >= 0))""",
+    """CREATE TABLE operations (
+        id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, key TEXT NOT NULL,
+        request_json TEXT NOT NULL, fingerprint TEXT NOT NULL, decision TEXT NOT NULL,
+        reason TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
+        state TEXT NOT NULL, UNIQUE(principal_id, key))""",
+    """CREATE TABLE approvals (
+        operation_id TEXT PRIMARY KEY REFERENCES operations(id),
+        principal_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+        policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status='PENDING'))""",
+    """CREATE TABLE audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_id TEXT NOT NULL REFERENCES operations(id),
+        principal_id TEXT NOT NULL,
+        tool TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL,
+        policy_version TEXT NOT NULL, occurred_at TEXT NOT NULL,
+        event_type TEXT NOT NULL)""",
+)
+
 
 def connect(path: str) -> sqlite3.Connection:
     try:
@@ -20,30 +43,22 @@ def initialize(path: str, *, seed: bool = False) -> None:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, 1):
             raise StorageUnavailable
+        objects = connection.execute(
+            "SELECT type, name, sql FROM sqlite_schema WHERE substr(name, 1, 7) != 'sqlite_'"
+        ).fetchall()
+        if version == 0 and objects:
+            raise StorageUnavailable
+        if version == 1:
+            expected = {
+                ("table", statement.split()[2]): " ".join(statement.split()) for statement in SCHEMA
+            }
+            actual = {
+                (row["type"], row["name"]): " ".join((row["sql"] or "").split()) for row in objects
+            }
+            if actual != expected:
+                raise StorageUnavailable
         if version == 0:
-            statements = (
-                """CREATE TABLE accounts (
-                    id TEXT PRIMARY KEY, balance_cents INTEGER NOT NULL
-                    CHECK(typeof(balance_cents)='integer' AND balance_cents >= 0))""",
-                """CREATE TABLE operations (
-                    id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, key TEXT NOT NULL,
-                    request_json TEXT NOT NULL, fingerprint TEXT NOT NULL, decision TEXT NOT NULL,
-                    reason TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
-                    state TEXT NOT NULL, UNIQUE(principal_id, key))""",
-                """CREATE TABLE approvals (
-                    operation_id TEXT PRIMARY KEY REFERENCES operations(id),
-                    principal_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
-                    policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status='PENDING'))""",
-                """CREATE TABLE audit_events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    operation_id TEXT NOT NULL REFERENCES operations(id),
-                    principal_id TEXT NOT NULL,
-                    tool TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL,
-                    policy_version TEXT NOT NULL, occurred_at TEXT NOT NULL,
-                    event_type TEXT NOT NULL)""",
-            )
-            for statement in statements:
+            for statement in SCHEMA:
                 connection.execute(statement)
             connection.execute("PRAGMA user_version = 1")
         if seed:
@@ -52,7 +67,7 @@ def initialize(path: str, *, seed: bool = False) -> None:
                 [("acct-alice", 1000000), ("acct-bob", 1000000)],
             )
         connection.commit()
-    except sqlite3.Error:
+    except (sqlite3.Error, StorageUnavailable):
         connection.rollback()
         raise StorageUnavailable from None
     finally:

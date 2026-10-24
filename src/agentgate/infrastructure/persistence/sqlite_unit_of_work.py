@@ -28,6 +28,8 @@ class SqliteUnitOfWork:
         self.audit: AuditRepository
 
     def __enter__(self) -> Self:
+        if self._connection is not None:
+            raise StorageUnavailable
         connection = connect(self._path)
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -49,6 +51,14 @@ class SqliteUnitOfWork:
         except sqlite3.Error:
             raise StorageUnavailable from None
 
+    def rollback(self) -> None:
+        if self._connection is None:
+            raise StorageUnavailable
+        try:
+            self._connection.rollback()
+        except sqlite3.Error:
+            raise StorageUnavailable from None
+
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
@@ -57,7 +67,7 @@ class SqliteUnitOfWork:
     ) -> None:
         if self._connection is not None:
             try:
-                self._connection.rollback()
+                self.rollback()
             finally:
                 self._connection.close()
                 self._connection = None

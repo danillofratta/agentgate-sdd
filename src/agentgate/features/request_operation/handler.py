@@ -3,8 +3,8 @@ from agentgate.application.exceptions.idempotency_conflict import IdempotencyCon
 from agentgate.application.ports.clock_gateway import ClockGateway
 from agentgate.application.ports.operation_id_generator_gateway import OperationIdGeneratorGateway
 from agentgate.application.ports.policy_evaluator_gateway import PolicyEvaluatorGateway
-from agentgate.application.ports.request_unit_of_work_factory_gateway import (
-    RequestUnitOfWorkFactoryGateway,
+from agentgate.application.ports.request_unit_of_work_factory import (
+    RequestUnitOfWorkFactory,
 )
 from agentgate.domain.entities.approval import Approval
 from agentgate.domain.entities.operation import Operation
@@ -26,7 +26,7 @@ from agentgate.features.request_operation.result import (
 class RequestOperationHandler:
     def __init__(
         self,
-        unit_of_work: RequestUnitOfWorkFactoryGateway,
+        unit_of_work: RequestUnitOfWorkFactory,
         policy: PolicyEvaluatorGateway,
         clock: ClockGateway,
         ids: OperationIdGeneratorGateway,
