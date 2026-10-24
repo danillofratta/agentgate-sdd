@@ -55,6 +55,7 @@ def _hydrate(row: sqlite3.Row, *, stored_state: bool) -> Operation:
         datetime.fromisoformat(row["created_at"]),
     )
     state = OperationState(row["state"])
+    authorization = row["authorization_json"] if "authorization_json" in row.keys() else None
     if stored_state and state != operation.state:
         # Hydrate through the domain lifecycle without replaying commands or policy.
         if operation.state == OperationState.PENDING_APPROVAL and state in {
@@ -64,6 +65,20 @@ def _hydrate(row: sqlite3.Row, *, stored_state: bool) -> Operation:
             OperationState.DENIED,
         }:
             operation = operation.transition(OperationState.READY)
+        if authorization is not None:
+            payload = json.loads(authorization)
+            if (
+                set(payload) != {"decision", "reason", "version"}
+                or state != OperationState.SUCCEEDED
+            ):
+                raise StorageUnavailable
+            operation = operation.authorize_execution(
+                PolicyDecision(
+                    Decision(payload["decision"]),
+                    Reason(payload["reason"]),
+                    PolicyVersion(payload["version"]),
+                )
+            )
         operation = operation.transition(state)
     elif operation.state != state:
         raise StorageUnavailable

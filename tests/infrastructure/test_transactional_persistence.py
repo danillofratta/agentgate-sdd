@@ -89,6 +89,7 @@ def test_repository_contracts_share_uncommitted_connection_and_reopen(database, 
             "decision": None,
             "approver_id": None,
             "decided_at": None,
+            "consumed_at": None,
         }
         audit = connection.execute("SELECT * FROM audit_events").fetchone()
         assert dict(audit) == {

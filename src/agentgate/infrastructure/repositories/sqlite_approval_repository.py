@@ -8,6 +8,7 @@ from agentgate.domain.exceptions.invalid_transition import InvalidTransition
 from agentgate.domain.value_objects.approval_decision import ApprovalDecision
 from agentgate.domain.value_objects.approval_state import ApprovalState
 from agentgate.domain.value_objects.operation_id import OperationId
+from agentgate.domain.value_objects.operation_state import OperationState
 from agentgate.domain.value_objects.principal import Principal
 from agentgate.domain.value_objects.principal_id import PrincipalId
 from agentgate.domain.value_objects.role import Role
@@ -55,11 +56,53 @@ class SqliteApprovalRepository:
                 )
             if row["status"] == "EXPIRED":
                 approval = approval.expire(approval.expires_at)
-            if approval.state.value != row["status"] or approval.operation != operation:
+            expected_operation = approval.operation
+            if row["status"] == "CONSUMED":
+                approval = approval.consume(
+                    approval.operation,
+                    approval.operation.policy.version,
+                    datetime.fromisoformat(row["consumed_at"]),
+                    principal=Principal(
+                        approval.operation.principal_id, Role.AGENT, frozenset(), frozenset()
+                    ),
+                )
+                if operation.execution_authorization is None:
+                    raise StorageUnavailable
+                expected_operation = approval.operation.authorize_execution(
+                    operation.execution_authorization
+                ).transition(OperationState.SUCCEEDED)
+            if approval.state.value != row["status"] or expected_operation != operation:
                 raise StorageUnavailable
             return approval
         except (ValueError, TypeError, KeyError, IndexError):
             raise StorageUnavailable from None
+
+    def save_consumption(self, approval: Approval) -> None:
+        if not self._connection.in_transaction:
+            raise StorageUnavailable
+        if approval.state != ApprovalState.CONSUMED or approval.consumed_at is None:
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+        operation = approval.operation
+        cursor = self._connection.execute(
+            """UPDATE approvals SET status='CONSUMED', consumed_at=?
+               WHERE operation_id=? AND status='GRANTED' AND consumed_at IS NULL
+               AND principal_id=? AND fingerprint=? AND policy_version=?
+               AND created_at=? AND expires_at=? AND decision='APPROVE'
+               AND approver_id=? AND decided_at=?""",
+            (
+                approval.consumed_at.isoformat(),
+                operation.id.value,
+                operation.principal_id.value,
+                operation.request.fingerprint.value,
+                operation.policy.version.value,
+                operation.created_at.isoformat(),
+                approval.expires_at.isoformat(),
+                None if approval.approver_id is None else approval.approver_id.value,
+                None if approval.decided_at is None else approval.decided_at.isoformat(),
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
 
     def save_decision(self, approval: Approval) -> None:
         if not self._connection.in_transaction:

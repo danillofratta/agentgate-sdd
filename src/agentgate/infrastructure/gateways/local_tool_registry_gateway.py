@@ -20,7 +20,7 @@ class LocalToolRegistryGateway:
         tool: Tool,
         arguments: BalanceArguments | TransferArguments,
         accounts: tuple[AccountFacts, ...],
-    ) -> BalanceResult:
+    ) -> BalanceResult | TransferArguments:
         if tool == Tool.GET_BALANCE and type(arguments) is BalanceArguments:
             return self._balance.run(arguments, accounts)
         if tool == Tool.SIMULATE_TRANSFER and type(arguments) is TransferArguments:

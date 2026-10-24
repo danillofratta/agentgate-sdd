@@ -13,6 +13,7 @@ from agentgate.domain.value_objects.operation_request import OperationRequest
 from agentgate.domain.value_objects.operation_state import OperationState
 from agentgate.domain.value_objects.policy_decision import PolicyDecision
 from agentgate.domain.value_objects.principal_id import PrincipalId
+from agentgate.domain.value_objects.reason import Reason
 from agentgate.domain.value_objects.utc import require_utc
 
 
@@ -25,6 +26,7 @@ class Operation:
     policy: PolicyDecision
     created_at: datetime
     _state: OperationState = field(init=False)
+    execution_authorization: PolicyDecision | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         if not all(
@@ -92,4 +94,24 @@ class Operation:
             raise InvalidTransition("INVALID_OPERATION_TRANSITION")
         updated = copy(self)
         object.__setattr__(updated, "_state", target)
+        return updated
+
+    def authorize_execution(self, authorization: PolicyDecision) -> "Operation":
+        expected = (
+            Reason.HUMAN_APPROVED
+            if self.policy.decision == Decision.REQUIRE_APPROVAL
+            else Reason.PERMITTED
+        )
+        if (
+            self.state != OperationState.READY
+            or self.policy.decision == Decision.DENY
+            or self.execution_authorization is not None
+            or not isinstance(authorization, PolicyDecision)
+            or authorization.decision != Decision.ALLOW
+            or authorization.version != self.policy.version
+            or authorization.reason != expected
+        ):
+            raise InvalidTransition("INVALID_EXECUTION_AUTHORIZATION")
+        updated = copy(self)
+        object.__setattr__(updated, "execution_authorization", authorization)
         return updated
