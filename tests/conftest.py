@@ -85,3 +85,41 @@ def clock():
 def sleeper():
     delays = []
     return delays.append
+
+
+@pytest.fixture
+def audit_history(database, principal, clock):
+    """Committed request evidence with IDs deliberately out of timestamp order."""
+    from datetime import timedelta
+    from uuid import UUID
+
+    from agentgate.domain.entities.approval import Approval
+    from agentgate.domain.entities.operation import Operation
+    from agentgate.domain.value_objects.decision import Decision
+    from agentgate.domain.value_objects.idempotency_key import IdempotencyKey
+    from agentgate.domain.value_objects.operation_id import OperationId
+    from agentgate.domain.value_objects.policy_decision import PolicyDecision
+    from agentgate.domain.value_objects.policy_version import PolicyVersion
+    from agentgate.domain.value_objects.reason import Reason
+    from agentgate.infrastructure.persistence.sqlite_unit_of_work import SqliteUnitOfWork
+    from tests.domain.test_request_values import transfer
+
+    operations = []
+    with SqliteUnitOfWork(database) as work:
+        for index in range(1, 106):
+            operation = Operation(
+                OperationId(str(UUID(int=index))),
+                principal.id,
+                IdempotencyKey(f"audit-{index}"),
+                transfer(),
+                PolicyDecision(
+                    Decision.REQUIRE_APPROVAL, Reason.APPROVAL_REQUIRED, PolicyVersion("v1")
+                ),
+                clock.now() - timedelta(seconds=index),
+            )
+            work.operations.add(operation)
+            work.approvals.add(Approval(operation))
+            work.audit.append(operation.requested_event())
+            operations.append(operation)
+        work.commit()
+    return tuple(operations)
