@@ -1,12 +1,14 @@
 from agentgate.application.exceptions.forbidden import Forbidden
 from agentgate.application.exceptions.idempotency_conflict import IdempotencyConflict
-from agentgate.application.ports.clock_gateway import Clock
-from agentgate.application.ports.operation_id_generator_gateway import OperationIdGenerator
-from agentgate.application.ports.policy_evaluator_gateway import PolicyEvaluator
-from agentgate.application.ports.request_unit_of_work_factory_gateway import RequestUnitOfWorkFactory
+from agentgate.application.ports.clock_gateway import ClockGateway
+from agentgate.application.ports.operation_id_generator_gateway import OperationIdGeneratorGateway
+from agentgate.application.ports.policy_evaluator_gateway import PolicyEvaluatorGateway
+from agentgate.application.ports.request_unit_of_work_factory_gateway import (
+    RequestUnitOfWorkFactoryGateway,
+)
 from agentgate.domain.entities.approval import Approval
 from agentgate.domain.entities.operation import Operation
-from agentgate.domain.events.operation_requested import OperationRequested
+from agentgate.domain.events.operation_requested_event import OperationRequestedEvent
 from agentgate.domain.value_objects.decision import Decision
 from agentgate.domain.value_objects.operation_id import OperationId
 from agentgate.domain.value_objects.policy_decision import PolicyDecision
@@ -25,10 +27,10 @@ from agentgate.features.request_operation.result import (
 class RequestOperationHandler:
     def __init__(
         self,
-        unit_of_work: RequestUnitOfWorkFactory,
-        policy: PolicyEvaluator,
-        clock: Clock,
-        ids: OperationIdGenerator,
+        unit_of_work: RequestUnitOfWorkFactoryGateway,
+        policy: PolicyEvaluatorGateway,
+        clock: ClockGateway,
+        ids: OperationIdGeneratorGateway,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._policy = policy
@@ -64,7 +66,7 @@ class RequestOperationHandler:
             if policy.decision == Decision.REQUIRE_APPROVAL:
                 work.approvals.add(Approval(operation))
             work.audit.append(
-                OperationRequested(
+                OperationRequestedEvent(
                     operation.id,
                     operation.principal_id,
                     operation.request.tool,
