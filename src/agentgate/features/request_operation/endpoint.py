@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from agentgate.dependencies import get_handler, get_principal
 from agentgate.domain.value_objects.account_id import AccountId
 from agentgate.domain.value_objects.balance_arguments import BalanceArguments
+from agentgate.domain.value_objects.balance_result import BalanceResult
 from agentgate.domain.value_objects.idempotency_key import IdempotencyKey
 from agentgate.domain.value_objects.money import Money
 from agentgate.domain.value_objects.operation_request import OperationRequest
@@ -48,6 +49,21 @@ def request_operation(
         )
     )
     operation = result.operation
+    stored = result.result
+    stored_result: dict[str, str | int] | None = None
+    if isinstance(stored, BalanceResult):
+        stored_result = {
+            "account_id": stored.account_id.value,
+            "balance_cents": stored.balance_cents,
+            "currency": stored.currency,
+        }
+    elif stored is not None:
+        stored_result = {
+            "source_account_id": stored.source_account_id.value,
+            "destination_account_id": stored.destination_account_id.value,
+            "amount_cents": stored.amount.cents,
+            "currency": stored.amount.currency,
+        }
     return JSONResponse(
         status_code=201 if result.created else 200,
         content={
@@ -60,6 +76,6 @@ def request_operation(
             "reason": operation.policy.reason.value,
             "policy_version": operation.policy.version.value,
             "created_at": operation.created_at.isoformat(),
-            "result": None,
+            "result": stored_result,
         },
     )

@@ -8,4 +8,4 @@ from agentgate.domain.value_objects.transfer_arguments import TransferArguments
 @dataclass(frozen=True)
 class ExecuteOperationResult:
     operation: Operation
-    result: BalanceResult | TransferArguments
+    result: BalanceResult | TransferArguments | None

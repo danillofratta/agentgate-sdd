@@ -11,6 +11,7 @@ from agentgate.domain.entities.operation import Operation
 from agentgate.domain.policies.operation_policy import CURRENT_POLICY_VERSION
 from agentgate.domain.value_objects.decision import Decision
 from agentgate.domain.value_objects.operation_id import OperationId
+from agentgate.domain.value_objects.operation_state import OperationState
 from agentgate.domain.value_objects.policy_decision import PolicyDecision
 from agentgate.domain.value_objects.policy_snapshot import PolicySnapshot
 from agentgate.domain.value_objects.reason import Reason
@@ -44,7 +45,13 @@ class RequestOperationHandler:
             if existing is not None:
                 if existing.request.fingerprint != command.request.fingerprint:
                     raise IdempotencyConflict
-                return RequestOperationResult(existing, created=False)
+                return RequestOperationResult(
+                    existing,
+                    created=False,
+                    result=work.operations.get_result(existing.id)
+                    if existing.state == OperationState.SUCCEEDED
+                    else None,
+                )
             try:
                 snapshot = PolicySnapshot(command.principal, command.request, work.accounts.facts())
                 policy = self._policy.evaluate(snapshot)

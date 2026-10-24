@@ -178,7 +178,12 @@ def test_only_ready_operation_can_dispatch(principal, clock, state):
     operation = balance_operation(principal, clock)
     object.__setattr__(operation, "_state", state)
     work, tools = FakeExecutionWork(operation), FakeTools()
-    with pytest.raises((InvalidTransition, ExecutionUnavailable, StorageUnavailable)):
+    errors = (
+        (Forbidden,)
+        if state == OperationState.DENIED
+        else (InvalidTransition, ExecutionUnavailable, StorageUnavailable)
+    )
+    with pytest.raises(errors):
         execution_handler(work, tools, clock).handle(
             ExecuteOperationCommand(principal, operation.id)
         )
@@ -342,3 +347,36 @@ def test_tool_exception_is_sanitized_and_never_retried(principal, clock):
     assert [type(event) for event in work.events] == [OperationAttemptedEvent, OperationFailedEvent]
     assert work.commits == 2 and work.result is None
     assert work.operation.state == OperationState.FAILED
+
+
+@pytest.mark.parametrize("state", [OperationState.FAILED, OperationState.TIMED_OUT])
+def test_terminal_inspection_with_fake_ports_is_read_only(principal, clock, state):
+    operation = balance_operation(principal, clock).transition(state)
+    work, tools = FakeExecutionWork(operation), FakeTools()
+    run = execution_handler(work, tools, clock)
+    result = run.terminal_result(ExecuteOperationCommand(principal, operation.id))
+    assert result.operation == operation and result.result is None
+    assert not tools.calls and not work.events and not work.commits
+
+
+@pytest.mark.parametrize(
+    "change,error",
+    [({"role": Role.APPROVER}, Forbidden), ({"id": PrincipalId("principal-other")}, NotFound)],
+)
+def test_terminal_inspection_enforces_direct_authorization(principal, clock, change, error):
+    operation = balance_operation(principal, clock).transition(OperationState.FAILED)
+    work, tools = FakeExecutionWork(operation), FakeTools()
+    run = execution_handler(work, tools, clock)
+    with pytest.raises(error):
+        run.terminal_result(ExecuteOperationCommand(replace(principal, **change), operation.id))
+    assert not tools.calls and not work.events and not work.commits
+
+
+def test_terminal_inspection_requires_durable_failure(principal, clock):
+    work = FakeExecutionWork(balance_operation(principal, clock))
+    tools = FakeTools()
+    with pytest.raises(StorageUnavailable):
+        execution_handler(work, tools, clock).terminal_result(
+            ExecuteOperationCommand(principal, work.operation.id)
+        )
+    assert not tools.calls and not work.events and not work.commits
