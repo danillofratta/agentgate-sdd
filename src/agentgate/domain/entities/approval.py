@@ -59,6 +59,7 @@ class Approval:
             self.operation.policy.version,
             self.decision,
             self.decided_at,
+            self.operation.request.tool,
         )
 
     def decide(self, approver: Principal, decision: ApprovalDecision, now: datetime) -> "Approval":

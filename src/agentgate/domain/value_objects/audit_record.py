@@ -1,18 +1,19 @@
 from dataclasses import dataclass
 
+from agentgate.domain.events.approval_decided_event import ApprovalDecidedEvent
 from agentgate.domain.events.operation_requested_event import OperationRequestedEvent
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 
 
 @dataclass(frozen=True)
 class AuditRecord:
-    """Persisted request evidence; contains only validated identifiers and codes."""
+    """Persisted decision evidence; contains only validated identifiers and codes."""
 
     id: int
-    event: OperationRequestedEvent
+    event: OperationRequestedEvent | ApprovalDecidedEvent
 
     def __post_init__(self) -> None:
         if type(self.id) is not int or not 1 <= self.id <= 2**63 - 1:
             raise InvariantViolation("INVALID_AUDIT_ID")
-        if not isinstance(self.event, OperationRequestedEvent):
+        if not isinstance(self.event, (OperationRequestedEvent, ApprovalDecidedEvent)):
             raise InvariantViolation("INVALID_AUDIT_EVENT")

@@ -7,6 +7,7 @@ from agentgate.domain.value_objects.operation_id import OperationId
 from agentgate.domain.value_objects.policy_version import PolicyVersion
 from agentgate.domain.value_objects.principal_id import PrincipalId
 from agentgate.domain.value_objects.request_fingerprint import RequestFingerprint
+from agentgate.domain.value_objects.tool import Tool
 from agentgate.domain.value_objects.utc import require_utc
 
 
@@ -19,6 +20,7 @@ class ApprovalDecidedEvent:
     policy_version: PolicyVersion
     decision: ApprovalDecision
     occurred_at: datetime
+    tool: Tool
 
     def __post_init__(self) -> None:
         if not (
@@ -29,6 +31,7 @@ class ApprovalDecidedEvent:
             and isinstance(self.fingerprint, RequestFingerprint)
             and isinstance(self.policy_version, PolicyVersion)
             and isinstance(self.decision, ApprovalDecision)
+            and isinstance(self.tool, Tool)
         ):
             raise InvariantViolation("INVALID_APPROVAL_EVENT")
         require_utc(self.occurred_at)
