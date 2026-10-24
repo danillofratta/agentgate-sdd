@@ -1,6 +1,7 @@
 import sqlite3
 from typing import cast
 
+from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.entities.operation import Operation
 from agentgate.domain.value_objects.idempotency_key import IdempotencyKey
 from agentgate.domain.value_objects.principal_id import PrincipalId
@@ -22,6 +23,8 @@ class SqliteOperationRepository:
         return None if row is None else hydrate(row)
 
     def add(self, operation: Operation) -> None:
+        if not self._connection.in_transaction:
+            raise StorageUnavailable
         self._connection.execute(
             """INSERT INTO operations(id, principal_id, key, request_json, fingerprint,
                decision, reason, policy_version, created_at, state) VALUES (?,?,?,?,?,?,?,?,?,?)""",

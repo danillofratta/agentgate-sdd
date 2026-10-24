@@ -7,13 +7,13 @@ from agentgate.domain.repositories.audit_repository import AuditRepository
 from agentgate.domain.repositories.operation_repository import OperationRepository
 
 
-class RequestUnitOfWorkGateway(Protocol):
+class RequestUnitOfWork(Protocol):
     operations: OperationRepository
     accounts: AccountRepository
     approvals: ApprovalRepository
     audit: AuditRepository
 
-    def __enter__(self) -> "RequestUnitOfWorkGateway": ...
+    def __enter__(self) -> "RequestUnitOfWork": ...
 
     def __exit__(
         self,
@@ -23,3 +23,5 @@ class RequestUnitOfWorkGateway(Protocol):
     ) -> None: ...
 
     def commit(self) -> None: ...
+
+    def rollback(self) -> None: ...
