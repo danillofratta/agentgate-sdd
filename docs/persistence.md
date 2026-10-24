@@ -29,8 +29,9 @@ SQLite URI connections with `query_only=ON`. Operation and approval reads share
 one read transaction. Repeated reads never persist expiry, change balances,
 consume approval, recompute results, or append audit. An expired pending approval
 can therefore still be stored as PENDING. Invoking a balance tool through the
-future execution lifecycle is a command because it must persist result/audit.
-Approval commands persist human decisions; execution remains a later task.
+execution lifecycle is a command because it persists result/audit.
+Approval commands persist human decisions; the execution harness persists
+simulated effects, approval consumption, results and lifecycle evidence.
 See the [human approval walkthrough](human_approval_walkthrough.md) for grant,
 rejection, reopen, exact-boundary expiry and atomic expiry audit.
 
@@ -48,12 +49,14 @@ schema, including rejecting unexpected tables, views, triggers or columns.
 
 | Storage version | Meaning |
 | --- | --- |
-| 0, empty database | Create the current v4 schema |
+| 0, empty database | Create the current v6 schema |
 | 0, nonempty database | Reject; never infer or reset a schema |
-| 1 | Validate the legacy schema, add nullable `operations.result_json`, then migrate approval/audit storage through 3 to 4 atomically |
-| 2 | Validate and migrate pending approvals and audit rows through 3 to 4 atomically |
-| 3 | Validate and migrate approval constraints to permit EXPIRED, preserving all rows and audit IDs |
-| 4 | Validate and reopen without resetting data |
+| 1 | Validate legacy schema, add result storage, then migrate through v6 atomically |
+| 2 | Validate and migrate approval/audit storage through v6 atomically |
+| 3 | Add EXPIRED approval support, then migrate through v6 atomically |
+| 4 | Add execution authorization and consumption metadata, then migrate audit to v6 |
+| 5 | Migrate lifecycle audit constraints and durable attempt numbers to v6 |
+| 6 | Validate and reopen without resetting data |
 | Any other version or mismatched schema | Fail closed without seeding or destructive repair |
 
 `accounts` holds IDs and nonnegative integer balances. `operations` holds the
@@ -91,12 +94,14 @@ policy, principal, request, fingerprint and deadline. Conditional updates and
 stored snapshot without another event. Early expiry and other terminal states
 are rejected. Audit failure rolls back both states. No endpoint, scheduler,
 worker or tool invocation triggers this internal command; queries remain read-only.
-Consumption and execution remain future increments.
-The operation reader can hydrate
-supported lifecycle states and typed stored success results; test fixtures supply
-such results without implementing execution. A SUCCEEDED row requires a result;
-other states reject a non-null result. Recovery tests do not claim execution is
-implemented. Future execution tasks must evolve schema and adapters.
+Execution atomically stores balances, result, effective authorization, required
+approval consumption and dispatch/success audit through one connection.
+Durable attempt evidence commits separately before dispatch; terminal failure
+evidence is recorded after confirmed rollback when storage permits. An uncertain
+commit requires reconciliation before another dispatch. See the
+[execution harness](execution_harness.md) for recovery and retry classification.
+The operation reader hydrates lifecycle states and typed stored results. A
+SUCCEEDED row requires a result; other states reject a non-null result.
 
 ## Seeding and sensitive data
 
@@ -110,9 +115,11 @@ Persist only validated structured tool arguments, IDs and stable codes. Never
 store bearer tokens, authorization headers, raw rejected input, exception text
 or configuration secrets. Audit contains event ID/type, operation/principal IDs,
 tool, decision/reason, policy version and UTC time; arguments and amounts remain
-on the operation rather than being copied into audit. Current durable events are
-OPERATION_REQUESTED, APPROVAL_DECIDED and APPROVAL_EXPIRED; typed domain facts
-alone are not committed evidence. Expiry evidence uses EXPIRED / APPROVAL_EXPIRED,
+on the operation rather than being copied into audit. Durable events are
+OPERATION_REQUESTED, APPROVAL_DECIDED, APPROVAL_EXPIRED, OPERATION_ATTEMPTED,
+OPERATION_DISPATCHED, OPERATION_EXECUTED and OPERATION_FAILED. Typed domain facts
+alone are not committed evidence. Attempt numbers describe attempts, not effects.
+Expiry evidence uses EXPIRED / APPROVAL_EXPIRED,
 the original binding fingerprint and the command's observed UTC time. It has no
 human approver identity because it describes an internal lifecycle transition.
 
@@ -150,7 +157,7 @@ Keep the original backup immutable and retain the previous database for rollback
 4. Restore by using the same backup API from the immutable backup into another
    fresh candidate. Run both checks there, then call
    `initialize(candidate, seed=False)` from the matching application revision.
-   Initialization validates compatibility and may migrate v1/v2/v3 to v4 **on this
+   Initialization validates compatibility and may migrate v1–v5 to v6 **on this
    candidate only**. Never initialize the backup or live database as a probe.
    Reject corrupt/incompatible backups before any promotion; do not reset their
    version or strip unknown schema objects to force acceptance.
