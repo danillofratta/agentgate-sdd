@@ -210,9 +210,15 @@ def test_policy_exception_secret_is_absent_from_all_output(settings, caplog):
         assert sentinel not in response.text + rejected.text + caplog.text + dump
 
 
-def test_no_unrelated_slice_endpoints(client):
+def test_only_planned_slice_endpoints(client):
     paths = client.app.openapi()["paths"]
-    assert set(paths) == {"/operations", "/audit"}
+    assert set(paths) == {
+        "/operations",
+        "/audit",
+        "/operations/{id}",
+        "/operations/{id}/approval",
+        "/operations/{id}/execute",
+    }
     assert set(paths["/operations"]) == {"post"}
     assert set(paths["/audit"]) == {"get"}
     assert client.get("/openapi.json").status_code == 404

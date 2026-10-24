@@ -82,6 +82,18 @@ class ExecuteOperationHandler:
             raise
         raise AssertionError("unreachable")
 
+    def terminal_result(self, command: ExecuteOperationCommand) -> ExecuteOperationResult:
+        """Return only confirmed durable terminal failure evidence to an inbound adapter."""
+        if command.principal.role != Role.AGENT:
+            raise Forbidden
+        deadline = ExecutionDeadline(self._clock, self._clock.monotonic() + 0.05)
+        with self._transaction(self._recovery_work, deadline) as work:
+            operation = self._load(work, command)
+            self._principal(command)
+            if operation.state not in {OperationState.FAILED, OperationState.TIMED_OUT}:
+                raise StorageUnavailable
+            return ExecuteOperationResult(operation, None)
+
     def _load(self, work: RequestUnitOfWork, command: ExecuteOperationCommand) -> Operation:
         operation = work.operations.get(command.operation_id)
         if (

@@ -56,6 +56,8 @@ class Harness:
     ) -> tuple[tuple[AccountFacts, ...], Approval | None, Operation]:
         if operation.request.tool not in (Tool.GET_BALANCE, Tool.SIMULATE_TRANSFER):
             raise Forbidden
+        if operation.state == OperationState.DENIED:
+            raise Forbidden
         if operation.state != OperationState.READY:
             raise ExecutionConflict("OPERATION_NOT_READY")
         if (

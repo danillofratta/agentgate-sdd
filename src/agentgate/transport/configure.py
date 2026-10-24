@@ -8,6 +8,8 @@ from agentgate.application.exceptions.forbidden import Forbidden
 from agentgate.application.exceptions.idempotency_conflict import IdempotencyConflict
 from agentgate.application.exceptions.not_found import NotFound
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
+from agentgate.domain.exceptions.approval_binding_mismatch import ApprovalBindingMismatch
+from agentgate.domain.exceptions.invalid_transition import InvalidTransition
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.transport.body_limit import BodyLimit
 from agentgate.transport.sanitized_errors import SanitizedErrors
@@ -28,6 +30,8 @@ def configure_http(application: FastAPI) -> None:
 
     register_error(RequestValidationError, "INVALID_INPUT", 422)
     register_error(InvariantViolation, "INVALID_INPUT", 422)
+    register_error(InvalidTransition, "INVALID_LIFECYCLE", 409)
+    register_error(ApprovalBindingMismatch, "APPROVAL_BINDING_MISMATCH", 409)
     register_error(Forbidden, "FORBIDDEN", 403)
     register_error(NotFound, "NOT_FOUND", 404)
     register_error(IdempotencyConflict, "IDEMPOTENCY_CONFLICT", 409)
