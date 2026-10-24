@@ -72,6 +72,34 @@ class SqliteOperationRepository:
                 raise StorageUnavailable
         return operation
 
+    def save_approval_expiry(self, operation: Operation) -> None:
+        if not self._connection.in_transaction:
+            raise StorageUnavailable
+        if (
+            operation.state != OperationState.EXPIRED
+            or operation.policy.decision != Decision.REQUIRE_APPROVAL
+        ):
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+        cursor = self._connection.execute(
+            """UPDATE operations SET state='EXPIRED'
+               WHERE id=? AND state IN ('PENDING_APPROVAL','READY') AND result_json IS NULL
+               AND principal_id=? AND key=? AND request_json=? AND fingerprint=?
+               AND decision=? AND reason=? AND policy_version=? AND created_at=?""",
+            (
+                operation.id.value,
+                operation.principal_id.value,
+                operation.key.value,
+                operation.request.canonical_json(),
+                operation.request.fingerprint.value,
+                operation.policy.decision.value,
+                operation.policy.reason.value,
+                operation.policy.version.value,
+                operation.created_at.isoformat(),
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+
     def add(self, operation: Operation) -> None:
         if not self._connection.in_transaction:
             raise StorageUnavailable

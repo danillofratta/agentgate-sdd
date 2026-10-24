@@ -1,5 +1,6 @@
 import sqlite3
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,8 @@ from agentgate.domain.value_objects.principal_id import PrincipalId
 from agentgate.domain.value_objects.role import Role
 from agentgate.features.approve_operation.command import ApproveOperationCommand
 from agentgate.features.approve_operation.handler import ApproveOperationHandler
+from agentgate.features.expire_approval.command import ExpireApprovalCommand
+from agentgate.features.expire_approval.handler import ExpireApprovalHandler
 from agentgate.infrastructure.persistence.sqlite_unit_of_work import SqliteUnitOfWork
 from agentgate.main import create_app
 from tests.api.test_request_endpoint import headers, payload
@@ -28,6 +31,27 @@ def client(settings):
 
 def approver_headers():
     return {"Authorization": f"Bearer {APPROVER_TOKEN}"}
+
+
+def test_existing_audit_query_exposes_expiry_without_mutation(client, database, operation, clock):
+    with SqliteUnitOfWork(database) as work:
+        persist(work, operation)
+        work.commit()
+    clock.value = operation.created_at + timedelta(seconds=300)
+    ExpireApprovalHandler(lambda: SqliteUnitOfWork(database), clock).handle(
+        ExpireApprovalCommand(operation.id)
+    )
+    before = snapshot(database)
+    for _ in range(2):
+        response = client.get("/audit", headers=approver_headers())
+        assert response.status_code == 200
+        event = response.json()["events"][-1]
+        assert event["event_type"] == "APPROVAL_EXPIRED"
+        assert event["decision"] == "EXPIRED"
+        assert event["reason"] == "APPROVAL_EXPIRED"
+        assert event["fingerprint"] == operation.request.fingerprint.value
+        assert event["approver_id"] is None
+    assert snapshot(database) == before
 
 
 @pytest.mark.parametrize("token,status", [(None, 401), ("invalid", 401), (AGENT_TOKEN, 403)])

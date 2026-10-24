@@ -163,7 +163,7 @@ def test_legacy_schema_migrates_atomically_and_reopens(tmp_path, operation):
     assert snapshot(path) == before
     assert SqliteOperationReadRepository(path).get(operation.id).operation == operation
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
         assert connection.execute("SELECT result_json FROM operations").fetchone()[0] is None
 
 

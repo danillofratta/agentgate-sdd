@@ -30,7 +30,7 @@ class SqliteApprovalRepository:
             ).fetchone()
             if operation_row is None:
                 raise StorageUnavailable
-            # Build the original pending snapshot; replay only the stored human decision.
+            # Rebuild snapshots through domain transitions, without executing commands.
             operation = hydrate(operation_row, stored_state=True)
             pending = replace(operation)
             approval = Approval(pending)
@@ -42,7 +42,7 @@ class SqliteApprovalRepository:
                 or datetime.fromisoformat(row["expires_at"]) != approval.expires_at
             ):
                 raise StorageUnavailable
-            if row["status"] == "PENDING":
+            if row["decision"] is None:
                 if any(row[key] is not None for key in ("decision", "approver_id", "decided_at")):
                     raise StorageUnavailable
             else:
@@ -53,6 +53,8 @@ class SqliteApprovalRepository:
                     ApprovalDecision(row["decision"]),
                     datetime.fromisoformat(row["decided_at"]),
                 )
+            if row["status"] == "EXPIRED":
+                approval = approval.expire(approval.expires_at)
             if approval.state.value != row["status"] or approval.operation != operation:
                 raise StorageUnavailable
             return approval
@@ -102,3 +104,30 @@ class SqliteApprovalRepository:
                 approval.expires_at.isoformat(),
             ),
         )
+
+    def save_expiry(self, approval: Approval) -> None:
+        if not self._connection.in_transaction:
+            raise StorageUnavailable
+        if approval.state != ApprovalState.EXPIRED:
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+        operation = approval.operation
+        cursor = self._connection.execute(
+            """UPDATE approvals SET status='EXPIRED'
+               WHERE operation_id=? AND status=? AND decision IS ? AND approver_id IS ?
+               AND decided_at IS ? AND principal_id=? AND fingerprint=? AND policy_version=?
+               AND created_at=? AND expires_at=?""",
+            (
+                operation.id.value,
+                "PENDING" if approval.decision is None else "GRANTED",
+                None if approval.decision is None else approval.decision.value,
+                None if approval.approver_id is None else approval.approver_id.value,
+                None if approval.decided_at is None else approval.decided_at.isoformat(),
+                operation.principal_id.value,
+                operation.request.fingerprint.value,
+                operation.policy.version.value,
+                operation.created_at.isoformat(),
+                approval.expires_at.isoformat(),
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")

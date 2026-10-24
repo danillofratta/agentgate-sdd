@@ -31,7 +31,7 @@ V2_SCHEMA = (
     *LEGACY_SCHEMA[2:],
 )
 
-SCHEMA = (
+V3_SCHEMA = (
     *V2_SCHEMA[:2],
     """CREATE TABLE approvals (
         operation_id TEXT PRIMARY KEY REFERENCES operations(id),
@@ -52,6 +52,25 @@ SCHEMA = (
     ),
 )
 
+SCHEMA = (
+    *V3_SCHEMA[:2],
+    """CREATE TABLE approvals (
+        operation_id TEXT PRIMARY KEY REFERENCES operations(id),
+        principal_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+        policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL, status TEXT NOT NULL
+        CHECK(status IN ('PENDING','GRANTED','REJECTED','EXPIRED')),
+        decision TEXT, approver_id TEXT, decided_at TEXT,
+        CHECK((status IN ('PENDING','EXPIRED') AND decision IS NULL
+               AND approver_id IS NULL AND decided_at IS NULL) OR
+              (status IN ('GRANTED','REJECTED','EXPIRED') AND decision IS NOT NULL
+               AND approver_id IS NOT NULL AND decided_at IS NOT NULL
+               AND approver_id != principal_id AND
+               ((status IN ('GRANTED','EXPIRED') AND decision='APPROVE') OR
+                (status='REJECTED' AND decision='REJECT')))))""",
+    V3_SCHEMA[3],
+)
+
 
 def connect(path: str) -> sqlite3.Connection:
     try:
@@ -68,17 +87,17 @@ def initialize(path: str, *, seed: bool = False) -> None:
     try:
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3):
+        if version not in (0, 1, 2, 3, 4):
             raise StorageUnavailable
         objects = connection.execute(
             "SELECT type, name, sql FROM sqlite_schema WHERE substr(name, 1, 7) != 'sqlite_'"
         ).fetchall()
         if version == 0 and objects:
             raise StorageUnavailable
-        if version in (1, 2, 3):
+        if version in (1, 2, 3, 4):
             expected = {
                 ("table", statement.split()[2]): " ".join(statement.split())
-                for statement in {1: LEGACY_SCHEMA, 2: V2_SCHEMA, 3: SCHEMA}[version]
+                for statement in {1: LEGACY_SCHEMA, 2: V2_SCHEMA, 3: V3_SCHEMA, 4: SCHEMA}[version]
             }
             actual = {
                 (row["type"], row["name"]): " ".join((row["sql"] or "").split()) for row in objects
@@ -88,14 +107,14 @@ def initialize(path: str, *, seed: bool = False) -> None:
         if version == 0:
             for statement in SCHEMA:
                 connection.execute(statement)
-            connection.execute("PRAGMA user_version = 3")
+            connection.execute("PRAGMA user_version = 4")
         if version == 1:
             # Inspection requires storage for results; commands remain separately scoped.
             connection.execute("ALTER TABLE operations ADD COLUMN result_json TEXT")
             connection.execute("PRAGMA user_version = 2")
         if version in (1, 2):
             connection.execute("ALTER TABLE approvals RENAME TO pending_approvals")
-            connection.execute(SCHEMA[2])
+            connection.execute(V3_SCHEMA[2])
             connection.execute(
                 """INSERT INTO approvals(operation_id, principal_id, fingerprint,
                    policy_version, created_at, expires_at, status)
@@ -105,6 +124,12 @@ def initialize(path: str, *, seed: bool = False) -> None:
             connection.execute("ALTER TABLE audit_events ADD COLUMN approver_id TEXT")
             connection.execute("ALTER TABLE audit_events ADD COLUMN fingerprint TEXT")
             connection.execute("PRAGMA user_version = 3")
+        if version in (1, 2, 3):
+            connection.execute("ALTER TABLE approvals RENAME TO previous_approvals")
+            connection.execute(SCHEMA[2])
+            connection.execute("INSERT INTO approvals SELECT * FROM previous_approvals")
+            connection.execute("DROP TABLE previous_approvals")
+            connection.execute("PRAGMA user_version = 4")
         if seed:
             connection.executemany(
                 "INSERT OR IGNORE INTO accounts(id, balance_cents) VALUES (?, ?)",
