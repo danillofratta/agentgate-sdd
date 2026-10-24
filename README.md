@@ -84,6 +84,10 @@ root; handlers use constructor injection and routes call handlers directly.
 One SQLite transaction stores the immutable request, approval, and decision audit.
 No mediator, event bus, event sourcing, or separate CQRS database is used.
 
+See [SQLite persistence and recovery](docs/persistence.md) for repository/UoW
+ownership, schema and lifecycle limits, stored-data redaction, and safe disposable
+backup/restore verification.
+
 Domain events are immutable typed business facts: `OperationRequestedEvent`,
 `ApprovalDecidedEvent`, and `OperationExecutedEvent`. Entities expose explicit
 fact methods after validation and lifecycle transitions. These methods use stored
