@@ -1,6 +1,7 @@
 from agentgate.application.exceptions.execution_conflict import ExecutionConflict
 from agentgate.application.exceptions.execution_unavailable import ExecutionUnavailable
 from agentgate.application.exceptions.forbidden import Forbidden
+from agentgate.application.execution_deadline import ExecutionDeadline
 from agentgate.application.ports.clock_gateway import ClockGateway
 from agentgate.application.ports.policy_evaluator_gateway import PolicyEvaluatorGateway
 from agentgate.application.ports.request_unit_of_work import RequestUnitOfWork
@@ -37,11 +38,20 @@ class Harness:
         self._tools = tools
         self._policy = policy
         self._clock = clock
-        # Reserved for task 5.4; this increment never sleeps or retries.
         self._sleeper = sleeper
 
+    def start_deadline(self) -> ExecutionDeadline:
+        return ExecutionDeadline(self._clock, self._clock.monotonic() + 2.0)
+
+    def retry_delay(self, deadline: ExecutionDeadline) -> None:
+        self._sleeper.sleep(min(0.05, deadline.remaining()))
+
     def run(
-        self, work: RequestUnitOfWork, operation: Operation, principal: Principal
+        self,
+        work: RequestUnitOfWork,
+        operation: Operation,
+        principal: Principal,
+        deadline: ExecutionDeadline,
     ) -> ExecuteOperationResult:
         if operation.request.tool not in (Tool.GET_BALANCE, Tool.SIMULATE_TRANSFER):
             raise Forbidden
@@ -54,8 +64,8 @@ class Harness:
             or operation.request.source not in principal.source_accounts
         ):
             raise Forbidden
+        accounts = work.accounts.facts()
         try:
-            accounts = work.accounts.facts()
             if (
                 not isinstance(accounts, tuple)
                 or any(type(account) is not AccountFacts for account in accounts)
@@ -90,6 +100,7 @@ class Harness:
             policy.version,
         )
         authorized = operation.authorize_execution(authorization)
+        deadline.remaining()
         work.audit.append(
             OperationDispatchedEvent(
                 operation.id,
@@ -100,25 +111,31 @@ class Harness:
                 self._clock.now(),
             )
         )
+        deadline.remaining()
         try:
             result = self._tools.dispatch(operation.request.tool, args, accounts)
-            if isinstance(args, BalanceArguments):
-                if type(result) is not BalanceResult or result.account_id != args.account_id:
-                    raise ExecutionUnavailable
-            else:
-                if type(result) is not TransferArguments or result != args:
-                    raise ExecutionUnavailable
-                entities = {fact.id: Account(fact.id, fact.balance_cents) for fact in accounts}
-                source, destination = entities[args.source_account_id].transfer_to(
-                    entities[args.destination_account_id], args.amount
-                )
-                work.accounts.save(source)
-                work.accounts.save(destination)
         except Exception:
             raise ExecutionUnavailable from None
+        if isinstance(args, BalanceArguments):
+            if type(result) is not BalanceResult or result.account_id != args.account_id:
+                raise ExecutionUnavailable
+        else:
+            if type(result) is not TransferArguments or result != args:
+                raise ExecutionUnavailable
+            entities = {fact.id: Account(fact.id, fact.balance_cents) for fact in accounts}
+            source, destination = entities[args.source_account_id].transfer_to(
+                entities[args.destination_account_id], args.amount
+            )
+            deadline.remaining()
+            work.accounts.save(source)
+            deadline.remaining()
+            work.accounts.save(destination)
         completed = authorized.transition(OperationState.SUCCEEDED)
+        deadline.remaining()
         work.operations.save_execution(completed, result)
         if consumed is not None:
+            deadline.remaining()
             work.approvals.save_consumption(consumed)
+        deadline.remaining()
         work.audit.append(completed.executed_event(self._clock.now()))
         return ExecuteOperationResult(completed, result)

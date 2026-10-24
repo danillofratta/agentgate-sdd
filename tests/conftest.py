@@ -70,7 +70,11 @@ def settings(database):
 
 class FakeClock:
     def __init__(self):
+        self.elapsed = 0.0
         self.value = datetime(2026, 10, 23, 12, tzinfo=UTC)
+
+    def monotonic(self):
+        return self.elapsed
 
     def now(self):
         return self.value

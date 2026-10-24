@@ -1,6 +1,7 @@
 from types import TracebackType
 from typing import Protocol
 
+from agentgate.application.execution_deadline import ExecutionDeadline
 from agentgate.domain.repositories.account_repository import AccountRepository
 from agentgate.domain.repositories.approval_repository import ApprovalRepository
 from agentgate.domain.repositories.audit_repository import AuditRepository
@@ -12,6 +13,8 @@ class RequestUnitOfWork(Protocol):
     accounts: AccountRepository
     approvals: ApprovalRepository
     audit: AuditRepository
+
+    def set_deadline(self, deadline: ExecutionDeadline) -> None: ...
 
     def __enter__(self) -> "RequestUnitOfWork": ...
 

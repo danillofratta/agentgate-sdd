@@ -60,6 +60,9 @@ class FakeExecutionWork:
         )
         self.audit = SimpleNamespace(append=self.events.append)
 
+    def set_deadline(self, deadline):
+        self.deadline = deadline
+
     def save_execution(self, operation, result):
         self.operation, self.result = operation, result
 
