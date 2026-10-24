@@ -5,11 +5,13 @@ AgentGate executes two local SQLite simulations: `get_balance` and
 connected. MCP and LLM integrations are **not implemented**. The local SQLite
 simulation is not a production distributed transaction system.
 
-This document describes the implemented handler-level boundary through task 5.5.
-The execution slice has no HTTP endpoint/models or startup wiring in
-[`dependencies.py`](../src/agentgate/dependencies.py) yet. References below to
-execution outcomes describe Python results/exceptions, not a completed execute
-HTTP API.
+The handler-level boundary is wired in
+[`dependencies.py`](../src/agentgate/dependencies.py) and exposed by the slice's
+[`endpoint.py`](../src/agentgate/features/execute_operation/endpoint.py).
+`POST /operations/{id}/execute` accepts an empty body. The HTTP adapter returns
+stored/new success or durable FAILED/TIMED_OUT envelopes with status 200;
+unavailable/uncertain storage returns sanitized 503. See the
+[README HTTP demo](../README.md#http-demo) for all five routes.
 
 ## Architecture overview
 
@@ -37,8 +39,7 @@ policy, identity, tools, clock, sleeper, and transaction lifetime, with concrete
 adapters under `infrastructure/`. There is no mediator, event bus, event sourcing,
 separate read database, or background execution worker.
 
-The following arrows show permitted project dependency directions, not a claim
-that all execution components are already wired at startup. Framework DI belongs
+The following arrows show permitted project dependency directions. Framework DI belongs
 only in endpoint adapters and root providers. `dependencies.py` is the sole
 concrete composition root; handlers/domain never import concrete infrastructure.
 
@@ -262,9 +263,10 @@ The host, database administrator, credential configuration, and clocks are trust
 
 Missing identity, policy, account, approval, result, or required durable evidence
 fails closed. Total storage failure may prevent audit; the implementation returns
-unavailable rather than inventing evidence. Current shared HTTP configuration maps
-`StorageUnavailable` to sanitized 503; terminal execution HTTP envelopes/mappings
-are not implemented at this increment.
+unavailable rather than inventing evidence. Shared HTTP configuration maps
+`StorageUnavailable` to sanitized 503. The execute endpoint maps confirmed durable
+`FAILED`/`TIMED_OUT` outcomes to simulation envelopes with HTTP 200; it does not
+claim a terminal outcome when persistence cannot confirm one.
 
 ## Future integration boundaries
 

@@ -10,8 +10,9 @@ uv run --locked pytest tests/infrastructure/test_durable_approval_expiry.py -v
 
 Each case uses an isolated, seeded temporary SQLite file and an injected
 `FakeClock`. Existing request, policy, approval and query handlers use the existing
-SQLite UoW and read adapters. This is a handler-level demonstration; it does not
-claim an approval HTTP route exists. No credentials, service process, real-time
+SQLite UoW and read adapters. This is a handler-level demonstration; the
+[README](../README.md#http-demo) also covers the implemented approval HTTP route.
+No credentials, service process, real-time
 sleeps or external services are needed. The offline fixture blocks outbound
 connections and subprocesses; architecture tests enforce tool dispatch placement.
 
@@ -32,7 +33,7 @@ Operation status and approval status are separate:
 | Internal expiry command at or after original deadline | EXPIRED in storage | EXPIRED in storage | APPROVAL_EXPIRED / EXPIRED / APPROVAL_EXPIRED |
 | Reopen or repeat expiry command | EXPIRED | EXPIRED | Same ordered evidence; exactly one expiry event |
 
-`READY` means eligible for a future explicit execution attempt. All walkthrough
+`READY` means eligible for a separate explicit execution attempt. All walkthrough
 results remain `None`, approvals remain unconsumed, and both seeded balances stay
 at 1,000,000 cents. Approval itself never runs a transfer.
 
@@ -89,8 +90,10 @@ The existing `BEGIN IMMEDIATE` UoW serializes independent connections. Condition
 repository updates and the expiry audit share one transaction. If audit insertion
 fails, both state updates roll back and only prior evidence remains. A later retry
 can commit one expiry event. Invalid human decisions append no events. Runtime
-execution, consumption and execution-policy revalidation remain later tasks.
-Schema v4 migrates v1/v2/v3 data atomically and supports pending/granted expiry
+execution, consumption and execution-policy revalidation are implemented in the
+separate [execution slice](execution_harness.md), outside these expiry-only cases.
+The expiry constraints introduced in schema v4 support pending/granted expiry;
+the current schema is v6 and migrates supported v1–v5 databases atomically,
 without replacing existing decision evidence. Queries continue to use read-only
 connections; the existing audit endpoint can display expiry evidence.
 
@@ -129,12 +132,12 @@ Complementary existing checks:
 - `tests/application/test_approve_operation_handler.py::test_matching_unsupported_policy_rejected_by_handler`
   rejects a stale policy even when operation and approval agree.
 - `tests/architecture/test_cqrs.py` enforces that dispatch belongs only to the
-  future execute-operation harness.
+  execute-operation harness.
 
 See [SQLite persistence and recovery](persistence.md) for transaction ownership
 and the recovery procedure.
 
-## Verification record
+## Historical task 4.3 verification record
 
 Verified on Python 3.12.14 on 2026-10-24: locked environment sync; full Pytest
 suite (535 passed, including six walkthrough and nineteen durable-expiry cases);
