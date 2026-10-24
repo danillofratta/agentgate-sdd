@@ -95,6 +95,7 @@ def test_decision_fact_binds_exact_operation_and_retains_decision(operation, app
         operation.policy.version,
         decision,
         now,
+        operation.request.tool,
     )
     assert decided.decided_event() == event
     with pytest.raises(InvalidTransition, match="^INVALID_APPROVAL_TRANSITION$"):

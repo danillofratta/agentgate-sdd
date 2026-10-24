@@ -1,7 +1,12 @@
 from typing import Protocol
 
 from agentgate.domain.entities.approval import Approval
+from agentgate.domain.value_objects.operation_id import OperationId
 
 
 class ApprovalRepository(Protocol):
+    def get(self, operation_id: OperationId) -> Approval | None: ...
+
+    def save_decision(self, approval: Approval) -> None: ...
+
     def add(self, approval: Approval) -> None: ...

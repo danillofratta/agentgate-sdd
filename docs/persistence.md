@@ -46,10 +46,11 @@ schema, including rejecting unexpected tables, views, triggers or columns.
 
 | Storage version | Meaning |
 | --- | --- |
-| 0, empty database | Create the current v2 schema |
+| 0, empty database | Create the current v3 schema |
 | 0, nonempty database | Reject; never infer or reset a schema |
-| 1 | Validate the legacy schema, add nullable `operations.result_json`, advance to 2 atomically |
-| 2 | Validate and reopen without resetting data |
+| 1 | Validate the legacy schema, add nullable `operations.result_json`, then migrate approval/audit storage to 3 atomically |
+| 2 | Validate and migrate pending approvals and audit rows to 3 atomically |
+| 3 | Validate and reopen without resetting data |
 | Any other version or mismatched schema | Fail closed without seeding or destructive repair |
 
 `accounts` holds IDs and nonnegative integer balances. `operations` holds the
@@ -59,7 +60,8 @@ reason, policy version, UTC creation time, state and nullable result JSON.
 and restoration. Identical canonical requests replay the operation; changed
 requests under that key conflict. Keep these columns when backing up.
 `approvals` binds operation, principal, fingerprint, policy and the creation/expiry
-times. `audit_events` holds ordered integer IDs and sanitized request evidence;
+times, plus the one human decision, approver ID and decision timestamp.
+`audit_events` holds ordered integer IDs and sanitized request/approval evidence;
 preserve `sqlite_sequence` as well as application tables.
 
 Original policy decisions remain immutable: ALLOW starts READY, DENY starts
@@ -70,14 +72,18 @@ The domain approval graph permits PENDING → GRANTED/REJECTED/EXPIRED and
 GRANTED → CONSUMED/EXPIRED, with supplied time and binding checks. Expiry is
 creation plus 300 seconds; the exact boundary is expired.
 
-Current persistence writes only initial operation states and PENDING approvals;
-the schema explicitly restricts approval status to PENDING. It does not yet store
-approver decisions or consumption metadata. The operation reader can hydrate
+Approval commands atomically update PENDING approvals to GRANTED or REJECTED,
+move the operation to READY or REJECTED, and append the human decision audit.
+Conditional updates require the original pending state and exact stored binding;
+the original policy columns remain unchanged. SQLite's immediate write transaction
+serializes competing decisions. Request replay retains the decided operation
+state. Approval never dispatches tools or changes balances. Expiry persistence,
+consumption and execution remain future increments.
+The operation reader can hydrate
 supported lifecycle states and typed stored success results; test fixtures supply
 such results without implementing execution. A SUCCEEDED row requires a result;
-other states reject a non-null result. Request repository lookup currently maps
-initial states only: recovery tests do not claim terminal command replay is
-implemented. Future approval/execution tasks must evolve schema and adapters.
+other states reject a non-null result. Recovery tests do not claim execution is
+implemented. Future execution tasks must evolve schema and adapters.
 
 ## Seeding and sensitive data
 

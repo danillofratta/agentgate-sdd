@@ -15,7 +15,9 @@ class AuditEventResponse(BaseModel):
     reason: str
     policy_version: str
     occurred_at: datetime
-    event_type: Literal["OPERATION_REQUESTED"] = "OPERATION_REQUESTED"
+    event_type: Literal["OPERATION_REQUESTED", "APPROVAL_DECIDED"] = "OPERATION_REQUESTED"
+    approver_id: str | None = None
+    fingerprint: str | None = None
 
 
 class AuditPageResponse(BaseModel):

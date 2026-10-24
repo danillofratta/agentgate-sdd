@@ -1,13 +1,23 @@
 import sqlite3
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from agentgate.dependencies import build_components, get_principal
+from agentgate.domain.value_objects.approval_decision import ApprovalDecision
+from agentgate.domain.value_objects.principal_id import PrincipalId
+from agentgate.domain.value_objects.role import Role
+from agentgate.features.approve_operation.command import ApproveOperationCommand
+from agentgate.features.approve_operation.handler import ApproveOperationHandler
+from agentgate.infrastructure.persistence.sqlite_unit_of_work import SqliteUnitOfWork
 from agentgate.main import create_app
 from tests.api.test_request_endpoint import headers, payload
 from tests.conftest import AGENT_TOKEN, APPROVER_TOKEN
-from tests.infrastructure.test_transactional_persistence import snapshot
+from tests.infrastructure.test_transactional_persistence import operation as operation_fixture
+from tests.infrastructure.test_transactional_persistence import persist, snapshot
+
+operation = operation_fixture
 
 
 @pytest.fixture
@@ -55,6 +65,8 @@ def test_default_and_keyset_pages_are_bounded_and_sanitized(client, database, au
         "policy_version",
         "occurred_at",
         "event_type",
+        "approver_id",
+        "fingerprint",
     }
     second = client.get("/audit?after=50&limit=100", headers=approver_headers()).json()
     assert [event["id"] for event in second["events"]] == list(range(51, 106))
@@ -128,3 +140,31 @@ def test_corrupt_audit_row_does_not_expose_raw_storage(client, database, audit_h
     assert response.status_code == 503
     assert response.json() == {"error": "STORAGE_UNAVAILABLE"}
     assert sentinel not in response.text + caplog.text
+
+
+@pytest.mark.parametrize("decision", list(ApprovalDecision))
+def test_existing_audit_endpoint_reads_human_decision_without_writes(
+    client, database, operation, principal, clock, decision
+):
+    with SqliteUnitOfWork(database) as work:
+        persist(work, operation)
+        work.commit()
+    human = replace(principal, id=PrincipalId("principal-human"), role=Role.APPROVER)
+    ApproveOperationHandler(lambda: SqliteUnitOfWork(database), clock).handle(
+        ApproveOperationCommand(human, operation.id, decision)
+    )
+    before = snapshot(database)
+    for _ in range(2):
+        response = client.get("/audit", headers=approver_headers())
+        assert response.status_code == 200
+        events = response.json()["events"]
+        assert len(events) == 2
+        assert events[0]["decision"] == "REQUIRE_APPROVAL"
+        assert events[1]["event_type"] == "APPROVAL_DECIDED"
+        assert events[1]["decision"] == decision.value
+        assert events[1]["approver_id"] == human.id.value
+        assert events[1]["principal_id"] == operation.principal_id.value
+        assert events[1]["fingerprint"] == operation.request.fingerprint.value
+        assert events[1]["policy_version"] == operation.policy.version.value
+        assert events[1]["tool"] == operation.request.tool.value
+    assert snapshot(database) == before

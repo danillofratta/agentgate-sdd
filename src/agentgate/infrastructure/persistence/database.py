@@ -25,10 +25,31 @@ LEGACY_SCHEMA = (
         event_type TEXT NOT NULL)""",
 )
 
-SCHEMA = (
+V2_SCHEMA = (
     LEGACY_SCHEMA[0],
     LEGACY_SCHEMA[1].replace("state TEXT NOT NULL,", "state TEXT NOT NULL, result_json TEXT,"),
     *LEGACY_SCHEMA[2:],
+)
+
+SCHEMA = (
+    *V2_SCHEMA[:2],
+    """CREATE TABLE approvals (
+        operation_id TEXT PRIMARY KEY REFERENCES operations(id),
+        principal_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+        policy_version TEXT NOT NULL, created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL, status TEXT NOT NULL
+        CHECK(status IN ('PENDING','GRANTED','REJECTED')),
+        decision TEXT, approver_id TEXT, decided_at TEXT,
+        CHECK((status='PENDING' AND decision IS NULL AND approver_id IS NULL
+               AND decided_at IS NULL) OR
+              (status IN ('GRANTED','REJECTED') AND decision IS NOT NULL
+               AND approver_id IS NOT NULL AND decided_at IS NOT NULL
+               AND approver_id != principal_id AND
+               ((status='GRANTED' AND decision='APPROVE') OR
+                (status='REJECTED' AND decision='REJECT')))))""",
+    V2_SCHEMA[3].replace(
+        "event_type TEXT NOT NULL)", "event_type TEXT NOT NULL, approver_id TEXT, fingerprint TEXT)"
+    ),
 )
 
 
@@ -47,17 +68,17 @@ def initialize(path: str, *, seed: bool = False) -> None:
     try:
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2):
+        if version not in (0, 1, 2, 3):
             raise StorageUnavailable
         objects = connection.execute(
             "SELECT type, name, sql FROM sqlite_schema WHERE substr(name, 1, 7) != 'sqlite_'"
         ).fetchall()
         if version == 0 and objects:
             raise StorageUnavailable
-        if version in (1, 2):
+        if version in (1, 2, 3):
             expected = {
                 ("table", statement.split()[2]): " ".join(statement.split())
-                for statement in (LEGACY_SCHEMA if version == 1 else SCHEMA)
+                for statement in {1: LEGACY_SCHEMA, 2: V2_SCHEMA, 3: SCHEMA}[version]
             }
             actual = {
                 (row["type"], row["name"]): " ".join((row["sql"] or "").split()) for row in objects
@@ -67,11 +88,23 @@ def initialize(path: str, *, seed: bool = False) -> None:
         if version == 0:
             for statement in SCHEMA:
                 connection.execute(statement)
-            connection.execute("PRAGMA user_version = 2")
+            connection.execute("PRAGMA user_version = 3")
         if version == 1:
             # Inspection requires storage for results; commands remain separately scoped.
             connection.execute("ALTER TABLE operations ADD COLUMN result_json TEXT")
             connection.execute("PRAGMA user_version = 2")
+        if version in (1, 2):
+            connection.execute("ALTER TABLE approvals RENAME TO pending_approvals")
+            connection.execute(SCHEMA[2])
+            connection.execute(
+                """INSERT INTO approvals(operation_id, principal_id, fingerprint,
+                   policy_version, created_at, expires_at, status)
+                   SELECT * FROM pending_approvals"""
+            )
+            connection.execute("DROP TABLE pending_approvals")
+            connection.execute("ALTER TABLE audit_events ADD COLUMN approver_id TEXT")
+            connection.execute("ALTER TABLE audit_events ADD COLUMN fingerprint TEXT")
+            connection.execute("PRAGMA user_version = 3")
         if seed:
             connection.executemany(
                 "INSERT OR IGNORE INTO accounts(id, balance_cents) VALUES (?, ?)",

@@ -86,6 +86,9 @@ def test_repository_contracts_share_uncommitted_connection_and_reopen(database, 
             "created_at": operation.created_at.isoformat(),
             "expires_at": Approval(operation).expires_at.isoformat(),
             "status": "PENDING",
+            "decision": None,
+            "approver_id": None,
+            "decided_at": None,
         }
         audit = connection.execute("SELECT * FROM audit_events").fetchone()
         assert dict(audit) == {
@@ -98,6 +101,8 @@ def test_repository_contracts_share_uncommitted_connection_and_reopen(database, 
             "policy_version": "v1",
             "occurred_at": operation.created_at.isoformat(),
             "event_type": "OPERATION_REQUESTED",
+            "approver_id": None,
+            "fingerprint": None,
         }
 
 

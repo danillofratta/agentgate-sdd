@@ -128,7 +128,7 @@ def test_backup_restore_reopen_preserves_all_data(database, tmp_path, operation,
                 "acct-bob": 1012346,
             }
         with closing(sqlite3.connect(restored)) as connection:
-            assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+            assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
     assert expected_views[0].approval is not None
     assert expected_views[1].operation.state == OperationState.SUCCEEDED
     assert expected_views[1].result == completed.request.arguments
@@ -180,7 +180,7 @@ def test_bad_backup_is_rejected_before_promotion(database, tmp_path, damage):
             else:
                 connection.execute(
                     "INSERT INTO approvals VALUES ('missing','principal-agent','hash','v1',"
-                    "'time','time','PENDING')"
+                    "'time','time','PENDING',NULL,NULL,NULL)"
                 )
             connection.commit()
     before = backup.read_bytes() if backup.exists() else None
@@ -219,4 +219,4 @@ def test_legacy_restore_migrates_candidate_only(tmp_path, operation):
     assert backup.read_bytes() == before
     assert SqliteOperationReadRepository(str(candidate)).get(operation.id).operation == operation
     with closing(sqlite3.connect(candidate)) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
