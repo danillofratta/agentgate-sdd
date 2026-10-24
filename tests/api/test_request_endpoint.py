@@ -212,8 +212,9 @@ def test_policy_exception_secret_is_absent_from_all_output(settings, caplog):
 
 def test_no_unrelated_slice_endpoints(client):
     paths = client.app.openapi()["paths"]
-    assert set(paths) == {"/operations"}
+    assert set(paths) == {"/operations", "/audit"}
     assert set(paths["/operations"]) == {"post"}
+    assert set(paths["/audit"]) == {"get"}
     assert client.get("/openapi.json").status_code == 404
     assert client.get("/docs").status_code == 404
 

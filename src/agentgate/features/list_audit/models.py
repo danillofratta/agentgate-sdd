@@ -1,0 +1,26 @@
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+
+class AuditEventResponse(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    id: int
+    operation_id: str
+    principal_id: str
+    tool: str
+    decision: str
+    reason: str
+    policy_version: str
+    occurred_at: datetime
+    event_type: Literal["OPERATION_REQUESTED"] = "OPERATION_REQUESTED"
+
+
+class AuditPageResponse(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    events: list[AuditEventResponse]
+    next_after: int
+    simulation: Literal[True] = True

@@ -1,0 +1,130 @@
+import sqlite3
+
+import pytest
+from fastapi.testclient import TestClient
+
+from agentgate.dependencies import build_components, get_principal
+from agentgate.main import create_app
+from tests.api.test_request_endpoint import headers, payload
+from tests.conftest import AGENT_TOKEN, APPROVER_TOKEN
+from tests.infrastructure.test_transactional_persistence import snapshot
+
+
+@pytest.fixture
+def client(settings):
+    with TestClient(create_app(build_components(settings))) as instance:
+        yield instance
+
+
+def approver_headers():
+    return {"Authorization": f"Bearer {APPROVER_TOKEN}"}
+
+
+@pytest.mark.parametrize("token,status", [(None, 401), ("invalid", 401), (AGENT_TOKEN, 403)])
+def test_audit_authentication_and_role(client, database, token, status):
+    before = snapshot(database)
+    authorization = {} if token is None else {"Authorization": f"Bearer {token}"}
+    response = client.get("/audit", headers=authorization)
+    assert response.status_code == status
+    assert snapshot(database) == before
+
+
+def test_audit_handler_rechecks_role_when_transport_identity_is_overridden(client, principal):
+    client.app.dependency_overrides[get_principal] = lambda: principal
+    response = client.get("/audit", headers=approver_headers())
+    assert response.status_code == 403
+    assert response.json() == {"error": "FORBIDDEN"}
+
+
+def test_default_and_keyset_pages_are_bounded_and_sanitized(client, database, audit_history):
+    before = snapshot(database)
+    response = client.get("/audit", headers=approver_headers())
+    assert response.status_code == 200
+    first = response.json()
+    assert first["simulation"] is True
+    assert len(first["events"]) == 50
+    assert [event["id"] for event in first["events"]] == list(range(1, 51))
+    assert first["next_after"] == 50
+    assert set(first["events"][0]) == {
+        "id",
+        "operation_id",
+        "principal_id",
+        "tool",
+        "decision",
+        "reason",
+        "policy_version",
+        "occurred_at",
+        "event_type",
+    }
+    second = client.get("/audit?after=50&limit=100", headers=approver_headers()).json()
+    assert [event["id"] for event in second["events"]] == list(range(51, 106))
+    assert second["next_after"] == 105
+    last = client.get("/audit?after=105&limit=1", headers=approver_headers()).json()
+    assert last["events"] == []
+    assert last["next_after"] == 105
+    assert snapshot(database) == before
+    for token in (AGENT_TOKEN, APPROVER_TOKEN):
+        assert token not in response.text
+
+
+@pytest.mark.parametrize("limit", [1, 100])
+def test_valid_page_size_boundaries(client, audit_history, limit):
+    response = client.get("/audit", params={"limit": limit}, headers=approver_headers())
+    assert response.status_code == 200
+    assert len(response.json()["events"]) == limit
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"limit": 0},
+        {"limit": -1},
+        {"limit": 101},
+        {"limit": "true"},
+        {"limit": "1.5"},
+        {"after": -1},
+        {"after": 2**63},
+        {"after": "false"},
+        {"after": "1.5"},
+        {"after": "0; DROP TABLE accounts"},
+    ],
+)
+def test_invalid_pagination_is_sanitized_without_writes(client, database, params):
+    before = snapshot(database)
+    response = client.get("/audit", params=params, headers=approver_headers())
+    assert response.status_code == 422
+    assert response.json() == {"error": "INVALID_INPUT"}
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+def test_audit_exposes_no_mutation_route(client, database, method):
+    before = snapshot(database)
+    assert client.request(method, "/audit", headers=approver_headers()).status_code == 405
+    assert snapshot(database) == before
+
+
+def test_audit_failure_rolls_back_request_and_approval_without_visible_event(client, database):
+    before = snapshot(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """CREATE TRIGGER fail_audit BEFORE INSERT ON audit_events
+               BEGIN SELECT RAISE(ABORT, 'SECRET_AUDIT_SENTINEL'); END"""
+        )
+    response = client.post("/operations", headers=headers(), json=payload(10001))
+    assert response.status_code == 503
+    assert response.json() == {"error": "STORAGE_UNAVAILABLE"}
+    assert client.get("/audit", headers=approver_headers()).json()["events"] == []
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP TRIGGER fail_audit")
+    assert snapshot(database) == before
+
+
+def test_corrupt_audit_row_does_not_expose_raw_storage(client, database, audit_history, caplog):
+    sentinel = "SECRET_AUDIT_SENTINEL\nforged-record"
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE audit_events SET reason=? WHERE id=1", (sentinel,))
+    response = client.get("/audit", headers=approver_headers())
+    assert response.status_code == 503
+    assert response.json() == {"error": "STORAGE_UNAVAILABLE"}
+    assert sentinel not in response.text + caplog.text
