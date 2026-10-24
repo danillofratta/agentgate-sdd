@@ -104,6 +104,7 @@ def test_repository_contracts_share_uncommitted_connection_and_reopen(database, 
             "event_type": "OPERATION_REQUESTED",
             "approver_id": None,
             "fingerprint": None,
+            "attempt": None,
         }
 
 

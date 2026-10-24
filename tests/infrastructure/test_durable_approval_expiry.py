@@ -93,6 +93,7 @@ def test_expiry_boundary_reopen_binding_audit_and_read_only_queries(
         "occurred_at": clock.now().isoformat(),
         "approver_id": None,
         "fingerprint": demo.operation.request.fingerprint.value,
+        "attempt": None,
     }
     records = demo.audit.handle(ListAuditQuery(demo.approver)).events
     assert records[-1].event == expired.expired_event(clock.now())
@@ -210,7 +211,7 @@ def test_v3_migration_preserves_pending_and_decided_data(tmp_path, clock, walkth
     before_audit = audit_rows(database)
     initialize(database, seed=False)
     assert current_approval(database, demo.operation) == approval
-    assert audit_rows(database) == before_audit
+    assert audit_rows(database) == [dict(row, attempt=None) for row in before_audit]
     before = snapshot(database)
     initialize(database, seed=False)
     assert snapshot(database) == before

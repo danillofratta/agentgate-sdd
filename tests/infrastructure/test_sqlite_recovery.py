@@ -128,7 +128,7 @@ def test_backup_restore_reopen_preserves_all_data(database, tmp_path, operation,
                 "acct-bob": 1012346,
             }
         with closing(sqlite3.connect(restored)) as connection:
-            assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+            assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
     assert expected_views[0].approval is not None
     assert expected_views[1].operation.state == OperationState.SUCCEEDED
     assert expected_views[1].result == completed.request.arguments
@@ -219,4 +219,4 @@ def test_legacy_restore_migrates_candidate_only(tmp_path, operation):
     assert backup.read_bytes() == before
     assert SqliteOperationReadRepository(str(candidate)).get(operation.id).operation == operation
     with closing(sqlite3.connect(candidate)) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6

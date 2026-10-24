@@ -13,6 +13,7 @@ from agentgate.domain.events.operation_executed_event import OperationExecutedEv
 from agentgate.domain.value_objects.approval_state import ApprovalState
 from agentgate.domain.value_objects.audit_page import AuditPage
 from agentgate.domain.value_objects.decision import Decision
+from agentgate.domain.value_objects.operation_state import OperationState
 from agentgate.domain.value_objects.reason import Reason
 from agentgate.features.evaluate_policy.handler import EvaluatePolicyHandler
 from agentgate.features.execute_operation.command import ExecuteOperationCommand
@@ -27,6 +28,7 @@ from agentgate.infrastructure.repositories.sqlite_operation_read_repository impo
     SqliteOperationReadRepository,
 )
 from tests.application.test_secure_transfer_handler import grant, transfer_operation
+from tests.infrastructure.execution_assertions import assert_rolled_back
 from tests.infrastructure.test_balance_execution import balances, executor
 from tests.infrastructure.test_transactional_persistence import snapshot
 
@@ -155,9 +157,9 @@ def test_every_write_failure_rolls_back_entire_transfer(
             ExecuteOperationCommand(principal, operation.id)
         )
     assert str(error.value) == ""
-    assert snapshot(database) == before
+    assert_rolled_back(database, before, state="FAILED")
     with SqliteUnitOfWork(database) as work:
-        assert work.operations.get(operation.id) == operation
+        assert work.operations.get(operation.id) == operation.transition(OperationState.FAILED)
         assert work.operations.get_result(operation.id) is None
         if approved:
             assert work.approvals.get(operation.id).state == ApprovalState.GRANTED

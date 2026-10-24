@@ -72,7 +72,7 @@ V4_SCHEMA = (
     V3_SCHEMA[3],
 )
 
-SCHEMA = (
+V5_SCHEMA = (
     V4_SCHEMA[0],
     V4_SCHEMA[1].replace("result_json TEXT,", "result_json TEXT, authorization_json TEXT,"),
     """CREATE TABLE approvals (
@@ -95,6 +95,17 @@ SCHEMA = (
 )
 
 
+SCHEMA = (
+    *V5_SCHEMA[:3],
+    V5_SCHEMA[3][:-1]
+    + """, attempt INTEGER,
+        CHECK((event_type='OPERATION_ATTEMPTED' AND typeof(attempt)='integer'
+               AND attempt > 0 AND decision='ALLOW' AND reason='EXECUTION_ATTEMPT') OR
+              (event_type!='OPERATION_ATTEMPTED' AND attempt IS NULL)),
+        UNIQUE(operation_id, attempt))""",
+)
+
+
 def connect(path: str) -> sqlite3.Connection:
     try:
         connection = sqlite3.connect(
@@ -112,14 +123,14 @@ def initialize(path: str, *, seed: bool = False) -> None:
     try:
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5):
+        if version not in (0, 1, 2, 3, 4, 5, 6):
             raise StorageUnavailable
         objects = connection.execute(
             "SELECT type, name, sql FROM sqlite_schema WHERE substr(name, 1, 7) != 'sqlite_'"
         ).fetchall()
         if version == 0 and objects:
             raise StorageUnavailable
-        if version in (1, 2, 3, 4, 5):
+        if version in (1, 2, 3, 4, 5, 6):
             expected = {
                 ("table", statement.split()[2]): " ".join(statement.split())
                 for statement in {
@@ -127,7 +138,8 @@ def initialize(path: str, *, seed: bool = False) -> None:
                     2: V2_SCHEMA,
                     3: V3_SCHEMA,
                     4: V4_SCHEMA,
-                    5: SCHEMA,
+                    5: V5_SCHEMA,
+                    6: SCHEMA,
                 }[version]
             }
             actual = {
@@ -138,7 +150,7 @@ def initialize(path: str, *, seed: bool = False) -> None:
         if version == 0:
             for statement in SCHEMA:
                 connection.execute(statement)
-            connection.execute("PRAGMA user_version = 5")
+            connection.execute("PRAGMA user_version = 6")
         if version == 1:
             # Inspection requires storage for results; commands remain separately scoped.
             connection.execute("ALTER TABLE operations ADD COLUMN result_json TEXT")
@@ -172,6 +184,16 @@ def initialize(path: str, *, seed: bool = False) -> None:
             )
             connection.execute("DROP TABLE previous_approvals")
             connection.execute("PRAGMA user_version = 5")
+        if version in (1, 2, 3, 4, 5):
+            connection.execute("ALTER TABLE audit_events RENAME TO previous_audit_events")
+            connection.execute(SCHEMA[3])
+            connection.execute(
+                """INSERT INTO audit_events(id, operation_id, principal_id, tool, decision,
+                   reason, policy_version, occurred_at, event_type, approver_id, fingerprint)
+                   SELECT * FROM previous_audit_events"""
+            )
+            connection.execute("DROP TABLE previous_audit_events")
+            connection.execute("PRAGMA user_version = 6")
         if seed:
             connection.executemany(
                 "INSERT OR IGNORE INTO accounts(id, balance_cents) VALUES (?, ?)",

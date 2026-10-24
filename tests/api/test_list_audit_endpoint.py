@@ -91,6 +91,7 @@ def test_default_and_keyset_pages_are_bounded_and_sanitized(client, database, au
         "event_type",
         "approver_id",
         "fingerprint",
+        "attempt",
     }
     second = client.get("/audit?after=50&limit=100", headers=approver_headers()).json()
     assert [event["id"] for event in second["events"]] == list(range(51, 106))

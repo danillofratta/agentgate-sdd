@@ -111,6 +111,7 @@ def assert_request_evidence(database, operation):
             "occurred_at": operation.created_at.isoformat(),
             "approver_id": None,
             "fingerprint": None,
+            "attempt": None,
         }
     ]
 
@@ -157,6 +158,7 @@ def test_pending_decision_reopen_and_correlated_sanitized_evidence(
             "occurred_at": clock.now().isoformat(),
             "approver_id": demo.approver.id.value,
             "fingerprint": original.request.fingerprint.value,
+            "attempt": None,
         },
     ]
     # Exact field allowlist excludes arguments, amounts, credentials and raw input.

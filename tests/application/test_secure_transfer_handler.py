@@ -122,7 +122,7 @@ def test_allow_and_human_approved_fake_port_transfer(principal, clock, amount):
         == result
     )
     assert (work.ledger, work.approval, work.events) == before
-    assert len(tools.calls) == work.commits == 1
+    assert len(tools.calls) == 1 and work.commits == 2
 
 
 @pytest.mark.parametrize(
@@ -191,8 +191,13 @@ def test_execution_revalidation_denies_without_consuming_approval(principal, clo
         (ExecutionConflict, Forbidden, NotFound, InvariantViolation, ExecutionUnavailable)
     ):
         execution_handler(work, tools, clock).handle(ExecuteOperationCommand(caller, operation.id))
-    assert (work.operation, work.ledger, work.approval) == before
-    assert not work.events and not work.commits
+    if failure == "overflow":
+        assert work.operation == before[0].transition(OperationState.FAILED)
+        assert (work.ledger, work.approval) == before[1:]
+        assert work.commits == 2 and len(work.events) == 2
+    else:
+        assert (work.operation, work.ledger, work.approval) == before
+        assert not work.events and not work.commits
     assert len(tools.calls) == int(failure == "overflow")
 
 
@@ -215,4 +220,4 @@ def test_fresh_principal_and_policy_are_loaded_inside_transaction(principal, clo
 
     handler._principals = SimpleNamespace(get_principal=current)
     handler.handle(ExecuteOperationCommand(principal, operation.id))
-    assert len(observed) == len(tools.calls) == 1
+    assert len(observed) == 2 and len(tools.calls) == 1

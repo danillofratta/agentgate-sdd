@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, Query
 from agentgate.dependencies import get_list_audit_handler, get_principal
 from agentgate.domain.events.approval_decided_event import ApprovalDecidedEvent
 from agentgate.domain.events.approval_expired_event import ApprovalExpiredEvent
+from agentgate.domain.events.operation_attempted_event import OperationAttemptedEvent
 from agentgate.domain.events.operation_dispatched_event import OperationDispatchedEvent
 from agentgate.domain.events.operation_executed_event import OperationExecutedEvent
+from agentgate.domain.events.operation_failed_event import OperationFailedEvent
 from agentgate.domain.events.operation_requested_event import OperationRequestedEvent
 from agentgate.domain.value_objects.principal import Principal
 from agentgate.features.list_audit.handler import ListAuditHandler
@@ -32,7 +34,11 @@ def list_audit(
                 principal_id=record.event.principal_id.value,
                 tool=record.event.tool.value,
                 decision=(
-                    "SUCCEEDED"
+                    record.event.state.value
+                    if isinstance(record.event, OperationFailedEvent)
+                    else "ALLOW"
+                    if isinstance(record.event, OperationAttemptedEvent)
+                    else "SUCCEEDED"
                     if isinstance(record.event, OperationExecutedEvent)
                     else "ALLOW"
                     if isinstance(record.event, OperationDispatchedEvent)
@@ -43,7 +49,11 @@ def list_audit(
                     else record.event.decision.value
                 ),
                 reason=(
-                    "EXECUTION_SUCCEEDED"
+                    "EXECUTION_" + record.event.state.value
+                    if isinstance(record.event, OperationFailedEvent)
+                    else "EXECUTION_ATTEMPT"
+                    if isinstance(record.event, OperationAttemptedEvent)
+                    else "EXECUTION_SUCCEEDED"
                     if isinstance(record.event, OperationExecutedEvent)
                     else "DISPATCH_AUTHORIZED"
                     if isinstance(record.event, OperationDispatchedEvent)
@@ -61,7 +71,11 @@ def list_audit(
                 ),
                 occurred_at=record.event.occurred_at,
                 event_type=(
-                    "OPERATION_EXECUTED"
+                    "OPERATION_FAILED"
+                    if isinstance(record.event, OperationFailedEvent)
+                    else "OPERATION_ATTEMPTED"
+                    if isinstance(record.event, OperationAttemptedEvent)
+                    else "OPERATION_EXECUTED"
                     if isinstance(record.event, OperationExecutedEvent)
                     else "OPERATION_DISPATCHED"
                     if isinstance(record.event, OperationDispatchedEvent)
@@ -81,6 +95,9 @@ def list_audit(
                     if isinstance(record.event, OperationRequestedEvent)
                     else record.event.fingerprint.value
                 ),
+                attempt=record.event.attempt
+                if isinstance(record.event, OperationAttemptedEvent)
+                else None,
             )
             for record in result.events
         ],

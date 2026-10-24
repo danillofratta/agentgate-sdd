@@ -9,6 +9,7 @@ from agentgate.domain.repositories.operation_repository import OperationReposito
 
 
 class RequestUnitOfWork(Protocol):
+    rollback_confirmed: bool
     operations: OperationRepository
     accounts: AccountRepository
     approvals: ApprovalRepository

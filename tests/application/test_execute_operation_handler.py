@@ -7,9 +7,12 @@ import pytest
 from agentgate.application.exceptions.execution_unavailable import ExecutionUnavailable
 from agentgate.application.exceptions.forbidden import Forbidden
 from agentgate.application.exceptions.not_found import NotFound
+from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.entities.operation import Operation
+from agentgate.domain.events.operation_attempted_event import OperationAttemptedEvent
 from agentgate.domain.events.operation_dispatched_event import OperationDispatchedEvent
 from agentgate.domain.events.operation_executed_event import OperationExecutedEvent
+from agentgate.domain.events.operation_failed_event import OperationFailedEvent
 from agentgate.domain.exceptions.invalid_transition import InvalidTransition
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.domain.value_objects.account_facts import AccountFacts
@@ -45,6 +48,7 @@ def balance_operation(principal, clock):
 
 class FakeExecutionWork:
     def __init__(self, operation):
+        self.rollback_confirmed = False
         self.operation = operation
         self.result = None
         self.events = []
@@ -54,11 +58,27 @@ class FakeExecutionWork:
             get=lambda operation_id: self.operation,
             save_execution=self.save_execution,
             get_result=lambda operation_id: self.result,
+            save_failure=lambda operation: setattr(self, "operation", operation),
         )
         self.accounts = SimpleNamespace(
             facts=lambda: (AccountFacts(AccountId("acct-alice"), 12345),)
         )
-        self.audit = SimpleNamespace(append=self.events.append)
+        self.audit = SimpleNamespace(
+            append=lambda event: self.events.append(event), append_attempt=self.append_attempt
+        )
+
+    def append_attempt(self, operation, occurred_at):
+        event = OperationAttemptedEvent(
+            operation.id,
+            operation.principal_id,
+            operation.request.tool,
+            operation.request.fingerprint,
+            operation.policy.version,
+            occurred_at,
+            1 + sum(isinstance(event, OperationAttemptedEvent) for event in self.events),
+        )
+        self.events.append(event)
+        return event
 
     def set_deadline(self, deadline):
         self.deadline = deadline
@@ -67,10 +87,12 @@ class FakeExecutionWork:
         self.operation, self.result = operation, result
 
     def __enter__(self):
+        self.rollback_confirmed = False
         self.before = deepcopy((self.operation, self.result, self.events))
         return self
 
     def __exit__(self, exc_type, exc, tb):
+        self.rollback_confirmed = bool(exc_type)
         if exc_type:
             self.operation, self.result, self.events = self.before
 
@@ -121,10 +143,11 @@ def test_balance_execution_fake_ports_and_exact_schema(principal, clock):
         "currency",
     ]
     assert result.result == BalanceResult(AccountId("acct-alice"), 12345, "USD")
-    assert len(tools.calls) == work.commits == 1
+    assert len(tools.calls) == 1 and work.commits == 2
     assert tools.calls[0][1] is operation.request.arguments
-    assert isinstance(work.events[0], OperationDispatchedEvent)
-    assert isinstance(work.events[1], OperationExecutedEvent)
+    assert isinstance(work.events[0], OperationAttemptedEvent)
+    assert isinstance(work.events[1], OperationDispatchedEvent)
+    assert isinstance(work.events[2], OperationExecutedEvent)
     assert work.accounts.facts() == (AccountFacts(AccountId("acct-alice"), 12345),)
 
 
@@ -155,7 +178,7 @@ def test_only_ready_operation_can_dispatch(principal, clock, state):
     operation = balance_operation(principal, clock)
     object.__setattr__(operation, "_state", state)
     work, tools = FakeExecutionWork(operation), FakeTools()
-    with pytest.raises((InvalidTransition, ExecutionUnavailable)):
+    with pytest.raises((InvalidTransition, ExecutionUnavailable, StorageUnavailable)):
         execution_handler(work, tools, clock).handle(
             ExecuteOperationCommand(principal, operation.id)
         )
@@ -248,8 +271,9 @@ def test_invalid_tool_result_rolls_back(principal, clock, result):
         execution_handler(work, tools, clock).handle(
             ExecuteOperationCommand(principal, operation.id)
         )
-    assert len(tools.calls) == 1 and not work.events and not work.commits
-    assert work.operation == operation and work.result is None
+    assert len(tools.calls) == 1 and work.commits == 2
+    assert [type(event) for event in work.events] == [OperationAttemptedEvent, OperationFailedEvent]
+    assert work.operation == operation.transition(OperationState.FAILED) and work.result is None
 
 
 def test_transfer_missing_destination_never_dispatched(principal, clock):
@@ -285,18 +309,19 @@ def test_fake_audit_failure_prevents_commit_and_pre_dispatch_failure_prevents_ca
     work, tools = FakeExecutionWork(operation), FakeTools()
 
     def append(event):
-        if isinstance(event, OperationExecutedEvent) == success_audit:
+        if isinstance(event, OperationExecutedEvent if success_audit else OperationDispatchedEvent):
             raise RuntimeError("audit unavailable")
         work.events.append(event)
 
     work.audit.append = append
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ExecutionUnavailable):
         execution_handler(work, tools, clock).handle(
             ExecuteOperationCommand(principal, operation.id)
         )
     assert len(tools.calls) == int(success_audit)
-    assert work.operation == operation and work.result is None
-    assert not work.events and not work.commits
+    assert work.operation == operation.transition(OperationState.FAILED) and work.result is None
+    assert [type(event) for event in work.events] == [OperationAttemptedEvent, OperationFailedEvent]
+    assert work.commits == 2
 
 
 def test_tool_exception_is_sanitized_and_never_retried(principal, clock):
@@ -314,4 +339,6 @@ def test_tool_exception_is_sanitized_and_never_retried(principal, clock):
         )
     assert len(tools.calls) == 1
     assert "SECRET_SENTINEL" not in str(error.value)
-    assert not work.events and not work.commits and work.result is None
+    assert [type(event) for event in work.events] == [OperationAttemptedEvent, OperationFailedEvent]
+    assert work.commits == 2 and work.result is None
+    assert work.operation.state == OperationState.FAILED

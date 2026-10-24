@@ -76,6 +76,10 @@ class SqliteOperationRepository:
             if approval is None or (
                 approval.operation != operation
                 and not (
+                    operation.state in (OperationState.FAILED, OperationState.TIMED_OUT)
+                    and approval.operation.transition(operation.state) == operation
+                )
+                and not (
                     operation.state == OperationState.SUCCEEDED
                     and operation.execution_authorization is not None
                     and approval.operation.authorize_execution(
@@ -186,6 +190,22 @@ class SqliteOperationRepository:
                 operation.policy.version.value,
                 operation.created_at.isoformat(),
             ),
+        )
+        if cursor.rowcount != 1:
+            raise InvalidTransition("INVALID_OPERATION_TRANSITION")
+
+    def save_failure(self, operation: Operation) -> None:
+        if not self._connection.in_transaction:
+            raise StorageUnavailable
+        if operation.state not in (OperationState.FAILED, OperationState.TIMED_OUT):
+            raise InvalidTransition("INVALID_OPERATION_TRANSITION")
+        stored = self.get(operation.id)
+        if stored is None or stored.transition(operation.state) != operation:
+            raise InvalidTransition("INVALID_OPERATION_TRANSITION")
+        cursor = self._connection.execute(
+            """UPDATE operations SET state=? WHERE id=? AND state='READY'
+               AND result_json IS NULL AND authorization_json IS NULL""",
+            (operation.state.value, operation.id.value),
         )
         if cursor.rowcount != 1:
             raise InvalidTransition("INVALID_OPERATION_TRANSITION")
