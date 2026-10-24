@@ -29,7 +29,7 @@ def request_operation(
     principal: Annotated[Principal, Depends(get_principal)],
     handler: Annotated[RequestOperationHandler, Depends(get_handler)],
     idempotency_key: Annotated[
-        str, Header(alias="Idempotency-Key", pattern="^[A-Za-z0-9_-]{1,64}$")
+        str, Header(alias="Idempotency-Key", pattern=r"\A[A-Za-z0-9_-]{1,64}\z")
     ],
 ) -> JSONResponse:
     arguments: BalanceArguments | TransferArguments

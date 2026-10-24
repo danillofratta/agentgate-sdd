@@ -6,6 +6,7 @@ import pytest
 
 from agentgate.application.exceptions.forbidden import Forbidden
 from agentgate.application.exceptions.idempotency_conflict import IdempotencyConflict
+from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.domain.value_objects.account_facts import AccountFacts
 from agentgate.domain.value_objects.account_id import AccountId
 from agentgate.domain.value_objects.decision import Decision
@@ -164,3 +165,12 @@ def test_internal_query_is_pure(principal):
     query = EvaluatePolicyQuery(PolicySnapshot(principal, transfer(), ()))
     assert use_case.handle(query) == use_case.handle(query)
     assert use_case.handle(query).decision == Decision.DENY
+
+
+@pytest.mark.parametrize("field", ["principal", "key", "request"])
+def test_alternate_adapter_cannot_submit_untyped_command(principal, clock, field):
+    work = FakeUnitOfWork()
+    command = RequestOperationCommand(principal, IdempotencyKey("one"), transfer())
+    with pytest.raises(InvariantViolation):
+        handler(work, clock).handle(replace(command, **{field: {"role": "APPROVER"}}))
+    assert not work.saved and not work.pending and not work.events and work.commits == 0
