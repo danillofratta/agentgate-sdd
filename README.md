@@ -88,6 +88,10 @@ See [SQLite persistence and recovery](docs/persistence.md) for repository/UoW
 ownership, schema and lifecycle limits, stored-data redaction, and safe disposable
 backup/restore verification.
 
+See the [human approval lifecycle walkthrough](docs/human_approval_walkthrough.md)
+for executable grant/reject/reopen and exact-expiry examples, audit evidence,
+and atomic durable expiry through an internal command.
+
 Domain events are immutable typed business facts: `OperationRequestedEvent`,
 `ApprovalDecidedEvent`, and `OperationExecutedEvent`. Entities expose explicit
 fact methods after validation and lifecycle transitions. These methods use stored

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from agentgate.domain.entities.operation import Operation
 from agentgate.domain.events.approval_decided_event import ApprovalDecidedEvent
+from agentgate.domain.events.approval_expired_event import ApprovalExpiredEvent
 from agentgate.domain.exceptions.approval_binding_mismatch import ApprovalBindingMismatch
 from agentgate.domain.exceptions.approver_required import ApproverRequired
 from agentgate.domain.exceptions.invalid_transition import InvalidTransition
@@ -125,6 +126,18 @@ class Approval:
         object.__setattr__(updated, "state", ApprovalState.CONSUMED)
         object.__setattr__(updated, "consumed_at", now)
         return updated
+
+    def expired_event(self, now: datetime) -> ApprovalExpiredEvent:
+        if self.state != ApprovalState.EXPIRED or not self.deadline.expired(now):
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+        return ApprovalExpiredEvent(
+            self.operation.id,
+            self.operation.principal_id,
+            self.operation.request.tool,
+            self.operation.request.fingerprint,
+            self.operation.policy.version,
+            now,
+        )
 
     def expire(self, now: datetime) -> "Approval":
         if self.state not in {

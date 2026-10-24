@@ -30,7 +30,9 @@ one read transaction. Repeated reads never persist expiry, change balances,
 consume approval, recompute results, or append audit. An expired pending approval
 can therefore still be stored as PENDING. Invoking a balance tool through the
 future execution lifecycle is a command because it must persist result/audit.
-Approval/execution handlers and their transactional updates are later tasks.
+Approval commands persist human decisions; execution remains a later task.
+See the [human approval walkthrough](human_approval_walkthrough.md) for grant,
+rejection, reopen, exact-boundary expiry and atomic expiry audit.
 
 Adapters reconstruct typed IDs, integer USD money, enums, UTC timestamps and
 immutable entities/snapshots. Canonical request JSON and its SHA-256 fingerprint
@@ -46,11 +48,12 @@ schema, including rejecting unexpected tables, views, triggers or columns.
 
 | Storage version | Meaning |
 | --- | --- |
-| 0, empty database | Create the current v3 schema |
+| 0, empty database | Create the current v4 schema |
 | 0, nonempty database | Reject; never infer or reset a schema |
-| 1 | Validate the legacy schema, add nullable `operations.result_json`, then migrate approval/audit storage to 3 atomically |
-| 2 | Validate and migrate pending approvals and audit rows to 3 atomically |
-| 3 | Validate and reopen without resetting data |
+| 1 | Validate the legacy schema, add nullable `operations.result_json`, then migrate approval/audit storage through 3 to 4 atomically |
+| 2 | Validate and migrate pending approvals and audit rows through 3 to 4 atomically |
+| 3 | Validate and migrate approval constraints to permit EXPIRED, preserving all rows and audit IDs |
+| 4 | Validate and reopen without resetting data |
 | Any other version or mismatched schema | Fail closed without seeding or destructive repair |
 
 `accounts` holds IDs and nonnegative integer balances. `operations` holds the
@@ -77,8 +80,18 @@ move the operation to READY or REJECTED, and append the human decision audit.
 Conditional updates require the original pending state and exact stored binding;
 the original policy columns remain unchanged. SQLite's immediate write transaction
 serializes competing decisions. Request replay retains the decided operation
-state. Approval never dispatches tools or changes balances. Expiry persistence,
-consumption and execution remain future increments.
+state. Approval never dispatches tools or changes balances.
+
+The internal `ExpireApprovalCommand`/`ExpireApprovalHandler` uses the same UoW
+and injected clock. At or after creation + 300 seconds it atomically persists
+PENDING/PENDING_APPROVAL or GRANTED/READY as EXPIRED/EXPIRED and appends
+APPROVAL_EXPIRED evidence. It preserves any human grant metadata and the original
+policy, principal, request, fingerprint and deadline. Conditional updates and
+`BEGIN IMMEDIATE` serialize concurrent calls; already expired calls return the
+stored snapshot without another event. Early expiry and other terminal states
+are rejected. Audit failure rolls back both states. No endpoint, scheduler,
+worker or tool invocation triggers this internal command; queries remain read-only.
+Consumption and execution remain future increments.
 The operation reader can hydrate
 supported lifecycle states and typed stored success results; test fixtures supply
 such results without implementing execution. A SUCCEEDED row requires a result;
@@ -98,7 +111,10 @@ store bearer tokens, authorization headers, raw rejected input, exception text
 or configuration secrets. Audit contains event ID/type, operation/principal IDs,
 tool, decision/reason, policy version and UTC time; arguments and amounts remain
 on the operation rather than being copied into audit. Current durable events are
-OPERATION_REQUESTED only; typed domain facts alone are not committed evidence.
+OPERATION_REQUESTED, APPROVAL_DECIDED and APPROVAL_EXPIRED; typed domain facts
+alone are not committed evidence. Expiry evidence uses EXPIRED / APPROVAL_EXPIRED,
+the original binding fingerprint and the command's observed UTC time. It has no
+human approver identity because it describes an internal lifecycle transition.
 
 The host, clock, database administrator and credential holders are trusted. Local
 audit is neither tamper-proof nor externally witnessed. An administrator can edit
@@ -134,7 +150,7 @@ Keep the original backup immutable and retain the previous database for rollback
 4. Restore by using the same backup API from the immutable backup into another
    fresh candidate. Run both checks there, then call
    `initialize(candidate, seed=False)` from the matching application revision.
-   Initialization validates compatibility and may migrate v1 to v2 **on this
+   Initialization validates compatibility and may migrate v1/v2/v3 to v4 **on this
    candidate only**. Never initialize the backup or live database as a probe.
    Reject corrupt/incompatible backups before any promotion; do not reset their
    version or strip unknown schema objects to force acceptance.

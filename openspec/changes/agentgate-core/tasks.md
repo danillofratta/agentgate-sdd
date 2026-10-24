@@ -32,7 +32,7 @@ These are future implementation tasks. No task is completed by this planning cha
 
 - [x] 4.1 Implement ApproveOperationCommand/Handler over the Approval entity and constructor-injected unit-of-work/clock ports, preserving atomic pending creation, exact fingerprint/principal/policy binding, grant/reject transitions, and decision audit; verify direct-handler agent self-approval fails, approval dispatches no tool, concurrent decisions yield one winner, and the original decision cannot be overwritten.
 - [x] 4.2 Enforce 300-second expiry including the exact boundary, operation ownership, immutable arguments, and stale-policy rejection through domain transitions and handler checks; verify domain and fake-port tests before/at/after expiry, HTTP bypass cannot reuse changed approval, a second agent receives 404, and stale policy prevents execution.
-- [ ] 4.3 Document and test the pending/granted/rejected/expired state walkthrough; verify approval and rejection survive database reopen and each walkthrough step has matching sanitized audit evidence.
+- [x] 4.3 Document and test the pending/granted/rejected/expired state walkthrough; verify approval and rejection survive database reopen and each walkthrough step has matching sanitized audit evidence.
 
 ## 5. Bounded simulation harness
 
