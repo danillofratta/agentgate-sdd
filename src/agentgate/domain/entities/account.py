@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from agentgate.domain.exceptions.insufficient_funds import InsufficientFunds
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.domain.value_objects.account_facts import AccountFacts
 from agentgate.domain.value_objects.account_id import AccountId
@@ -24,7 +25,7 @@ class Account:
         if self.id == destination.id:
             raise InvariantViolation("SAME_ACCOUNT_TRANSFER")
         if self.balance_cents < amount.cents:
-            raise InvariantViolation("INSUFFICIENT_FUNDS")
+            raise InsufficientFunds("INSUFFICIENT_FUNDS")
         return (
             Account(self.id, self.balance_cents - amount.cents),
             Account(destination.id, destination.balance_cents + amount.cents),

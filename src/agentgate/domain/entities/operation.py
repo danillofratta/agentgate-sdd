@@ -2,6 +2,9 @@ from copy import copy
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from agentgate.domain.events.operation_executed_event import OperationExecutedEvent
+from agentgate.domain.events.operation_requested_event import OperationRequestedEvent
+from agentgate.domain.exceptions.invalid_transition import InvalidTransition
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.domain.value_objects.decision import Decision
 from agentgate.domain.value_objects.idempotency_key import IdempotencyKey
@@ -49,6 +52,26 @@ class Operation:
     def state(self) -> OperationState:
         return self._state
 
+    def requested_event(self) -> OperationRequestedEvent:
+        """Describe the original request without recording or delivering it."""
+        return OperationRequestedEvent(
+            self.id, self.principal_id, self.request.tool, self.policy, self.created_at
+        )
+
+    def executed_event(self, occurred_at: datetime) -> OperationExecutedEvent:
+        """Describe successful completion using caller-supplied time, without dispatch."""
+        require_utc(occurred_at)
+        if self.state != OperationState.SUCCEEDED or occurred_at < self.created_at:
+            raise InvalidTransition("INVALID_OPERATION_TRANSITION")
+        return OperationExecutedEvent(
+            self.id,
+            self.principal_id,
+            self.request.tool,
+            self.request.fingerprint,
+            self.policy.version,
+            occurred_at,
+        )
+
     def transition(self, target: OperationState) -> "Operation":
         """Guard the lifecycle graph; request identity and original policy stay frozen."""
         allowed = {
@@ -66,7 +89,7 @@ class Operation:
             },
         }
         if not isinstance(target, OperationState) or target not in allowed.get(self.state, set()):
-            raise InvariantViolation("INVALID_OPERATION_TRANSITION")
+            raise InvalidTransition("INVALID_OPERATION_TRANSITION")
         updated = copy(self)
         object.__setattr__(updated, "_state", target)
         return updated

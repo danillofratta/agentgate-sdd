@@ -18,7 +18,7 @@ These are future implementation tasks. No task is completed by this planning cha
 - [x] 2.2 Define the credential-verification port and infrastructure security/configuration adapter with constant-time comparison, principal/role/tool/source mappings, and safe startup validation; verify missing, duplicate, short, and sample credentials fail startup, unauthorized API calls return 401/403, and no token reaches the domain, persistence, or error output.
 - [x] 2.3 Implement pure domain policy plus the internal EvaluatePolicyQuery/Handler and PolicyEvaluator port over supplied trusted snapshots; verify exact 1/10,000/10,001/100,000/100,001-cent decisions, permission/funds/missing-context failures, and deterministic repeated evaluation with no writes, real clock, database, or HTTP dependency.
 - [x] 2.4 Document domain vocabulary, pure-policy inputs, local trust boundary, credentials, tool payloads, thresholds, and error codes; verify examples map from API schemas to domain values, bypassing HTTP cannot weaken invariants, and examples contain no working/default credential.
-- [ ] 2.5 Add only the typed domain events/exceptions needed for request, approval, and execution facts and invariant failures; verify entity tests emit immutable facts without I/O and document that neither a bus, event sourcing, nor asynchronous delivery is required.
+- [x] 2.5 Add only the typed domain events/exceptions needed for request, approval, and execution facts and invariant failures; verify entity tests emit immutable facts without I/O and document that neither a bus, event sourcing, nor asynchronous delivery is required.
 
 ## 3. Durable operation and audit storage
 

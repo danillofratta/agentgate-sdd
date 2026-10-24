@@ -1,1 +1,1 @@
-"""Immutable domain facts, persisted synchronously without an event bus."""
+"""Immutable business facts, independent of audit persistence and delivery."""
