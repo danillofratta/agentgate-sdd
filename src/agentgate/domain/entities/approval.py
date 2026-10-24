@@ -3,6 +3,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from agentgate.domain.entities.operation import Operation
+from agentgate.domain.events.approval_decided_event import ApprovalDecidedEvent
+from agentgate.domain.exceptions.approval_binding_mismatch import ApprovalBindingMismatch
+from agentgate.domain.exceptions.approver_required import ApproverRequired
+from agentgate.domain.exceptions.invalid_transition import InvalidTransition
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.domain.value_objects.approval_deadline import ApprovalDeadline
 from agentgate.domain.value_objects.approval_decision import ApprovalDecision
@@ -43,17 +47,31 @@ class Approval:
     def expires_at(self) -> datetime:
         return self.deadline.expires_at
 
+    def decided_event(self) -> ApprovalDecidedEvent:
+        """Describe the original decision, including after consumption or expiry."""
+        if self.decision is None or self.approver_id is None or self.decided_at is None:
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
+        return ApprovalDecidedEvent(
+            self.operation.id,
+            self.operation.principal_id,
+            self.approver_id,
+            self.operation.request.fingerprint,
+            self.operation.policy.version,
+            self.decision,
+            self.decided_at,
+        )
+
     def decide(self, approver: Principal, decision: ApprovalDecision, now: datetime) -> "Approval":
         if (
             not isinstance(approver, Principal)
             or approver.role != Role.APPROVER
             or approver.id == self.operation.principal_id
         ):
-            raise InvariantViolation("APPROVER_REQUIRED")
+            raise ApproverRequired("APPROVER_REQUIRED")
         if not isinstance(decision, ApprovalDecision):
             raise InvariantViolation("INVALID_APPROVAL_DECISION")
         if self.state != ApprovalState.PENDING or self.deadline.expired(now):
-            raise InvariantViolation("INVALID_APPROVAL_TRANSITION")
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
         granted = decision == ApprovalDecision.APPROVE
         updated = copy(self)
         object.__setattr__(
@@ -76,14 +94,14 @@ class Approval:
             or self.decided_at is None
             or now < self.decided_at
         ):
-            raise InvariantViolation("INVALID_APPROVAL_TRANSITION")
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
         if (
             not isinstance(operation, Operation)
             or operation != self.operation
             or not isinstance(version, PolicyVersion)
             or version != self.operation.policy.version
         ):
-            raise InvariantViolation("APPROVAL_BINDING_MISMATCH")
+            raise ApprovalBindingMismatch("APPROVAL_BINDING_MISMATCH")
         updated = copy(self)
         object.__setattr__(updated, "state", ApprovalState.CONSUMED)
         object.__setattr__(updated, "consumed_at", now)
@@ -94,7 +112,7 @@ class Approval:
             ApprovalState.PENDING,
             ApprovalState.GRANTED,
         } or not self.deadline.expired(now):
-            raise InvariantViolation("INVALID_APPROVAL_TRANSITION")
+            raise InvalidTransition("INVALID_APPROVAL_TRANSITION")
         updated = copy(self)
         object.__setattr__(updated, "state", ApprovalState.EXPIRED)
         object.__setattr__(updated, "operation", self.operation.transition(OperationState.EXPIRED))

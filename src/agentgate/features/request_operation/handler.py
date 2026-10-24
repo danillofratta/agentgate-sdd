@@ -8,7 +8,6 @@ from agentgate.application.ports.request_unit_of_work_factory_gateway import (
 )
 from agentgate.domain.entities.approval import Approval
 from agentgate.domain.entities.operation import Operation
-from agentgate.domain.events.operation_requested_event import OperationRequestedEvent
 from agentgate.domain.value_objects.decision import Decision
 from agentgate.domain.value_objects.operation_id import OperationId
 from agentgate.domain.value_objects.policy_decision import PolicyDecision
@@ -65,14 +64,6 @@ class RequestOperationHandler:
             work.operations.add(operation)
             if policy.decision == Decision.REQUIRE_APPROVAL:
                 work.approvals.add(Approval(operation))
-            work.audit.append(
-                OperationRequestedEvent(
-                    operation.id,
-                    operation.principal_id,
-                    operation.request.tool,
-                    policy,
-                    operation.created_at,
-                )
-            )
+            work.audit.append(operation.requested_event())
             work.commit()
             return RequestOperationResult(operation, created=True)

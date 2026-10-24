@@ -84,6 +84,28 @@ root; handlers use constructor injection and routes call handlers directly.
 One SQLite transaction stores the immutable request, approval, and decision audit.
 No mediator, event bus, event sourcing, or separate CQRS database is used.
 
+Domain events are immutable typed business facts: `OperationRequestedEvent`,
+`ApprovalDecidedEvent`, and `OperationExecutedEvent`. Entities expose explicit
+fact methods after validation and lifecycle transitions. These methods use stored
+values and supplied UTC time, perform no I/O, and neither queue nor deliver events.
+Repeated calls describe the same fact; they do not establish a new transition.
+Execution facts require a successful operation state and never execute a tool.
+Approval and execution handlers remain future increments.
+
+A domain event is distinct from a durable audit record. The request handler passes
+the request fact to `AuditRepository`; the SQLite adapter maps it to a sanitized
+row and assigns its database ID. The unit of work commits the row together with
+business state. Merely constructing a fact proves neither persistence nor commit.
+Events are not the source of truth, and no bus, event sourcing, outbox, or
+asynchronous delivery is required. Future handlers must persist their audit
+evidence in the same transaction rather than rely on event delivery.
+
+`InvariantViolation` remains the typed base for invalid domain values. Lifecycle,
+approval binding, approver authorization, and funding failures use its
+`InvalidTransition`, `ApprovalBindingMismatch`, `ApproverRequired`, and
+`InsufficientFunds` subtypes. Existing sanitized codes and API responses remain
+unchanged; these exceptions contain no raw rejected input.
+
 Each domain Entity, Value Object, and Repository contract has a matching snake_case
 module. Repository contracts live in `domain/repositories`; implementations live in
 `infrastructure/repositories`. Persistence ports use
