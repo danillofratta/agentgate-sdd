@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from agentgate.application.exceptions.forbidden import Forbidden
 from agentgate.application.exceptions.idempotency_conflict import IdempotencyConflict
+from agentgate.application.exceptions.not_found import NotFound
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.transport.body_limit import BodyLimit
@@ -28,6 +29,7 @@ def configure_http(application: FastAPI) -> None:
     register_error(RequestValidationError, "INVALID_INPUT", 422)
     register_error(InvariantViolation, "INVALID_INPUT", 422)
     register_error(Forbidden, "FORBIDDEN", 403)
+    register_error(NotFound, "NOT_FOUND", 404)
     register_error(IdempotencyConflict, "IDEMPOTENCY_CONFLICT", 409)
     register_error(StorageUnavailable, "STORAGE_UNAVAILABLE", 503)
 
