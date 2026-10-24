@@ -30,7 +30,7 @@ class SqliteOperationRepository:
                 operation.principal_id.value,
                 operation.key.value,
                 operation.request.canonical_json(),
-                operation.request.fingerprint,
+                operation.request.fingerprint.value,
                 operation.policy.decision.value,
                 operation.policy.reason.value,
                 operation.policy.version.value,

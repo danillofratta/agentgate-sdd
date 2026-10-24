@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.domain.value_objects.account_id import AccountId
 from agentgate.domain.value_objects.balance_arguments import BalanceArguments
+from agentgate.domain.value_objects.request_fingerprint import RequestFingerprint
 from agentgate.domain.value_objects.tool import Tool
 from agentgate.domain.value_objects.transfer_arguments import TransferArguments
 
@@ -47,5 +48,5 @@ class OperationRequest:
         )
 
     @property
-    def fingerprint(self) -> str:
-        return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
+    def fingerprint(self) -> RequestFingerprint:
+        return RequestFingerprint(hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest())

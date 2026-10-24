@@ -15,7 +15,7 @@ class SqliteApprovalRepository:
             (
                 operation.id.value,
                 operation.principal_id.value,
-                operation.request.fingerprint,
+                operation.request.fingerprint.value,
                 operation.policy.version.value,
                 operation.created_at.isoformat(),
                 approval.expires_at.isoformat(),

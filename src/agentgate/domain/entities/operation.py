@@ -1,6 +1,8 @@
-from dataclasses import dataclass
+from copy import copy
+from dataclasses import dataclass, field
 from datetime import datetime
 
+from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 from agentgate.domain.value_objects.decision import Decision
 from agentgate.domain.value_objects.idempotency_key import IdempotencyKey
 from agentgate.domain.value_objects.operation_id import OperationId
@@ -19,10 +21,9 @@ class Operation:
     request: OperationRequest
     policy: PolicyDecision
     created_at: datetime
+    _state: OperationState = field(init=False)
 
     def __post_init__(self) -> None:
-        from agentgate.domain.exceptions.invariant_violation import InvariantViolation
-
         if not all(
             (
                 isinstance(self.id, OperationId),
@@ -34,11 +35,38 @@ class Operation:
         ):
             raise InvariantViolation("INVALID_OPERATION")
         require_utc(self.created_at)
+        object.__setattr__(
+            self,
+            "_state",
+            {
+                Decision.ALLOW: OperationState.READY,
+                Decision.DENY: OperationState.DENIED,
+                Decision.REQUIRE_APPROVAL: OperationState.PENDING_APPROVAL,
+            }[self.policy.decision],
+        )
 
     @property
     def state(self) -> OperationState:
-        return {
-            Decision.ALLOW: OperationState.READY,
-            Decision.DENY: OperationState.DENIED,
-            Decision.REQUIRE_APPROVAL: OperationState.PENDING_APPROVAL,
-        }[self.policy.decision]
+        return self._state
+
+    def transition(self, target: OperationState) -> "Operation":
+        """Guard the lifecycle graph; request identity and original policy stay frozen."""
+        allowed = {
+            OperationState.PENDING_APPROVAL: {
+                OperationState.READY,
+                OperationState.REJECTED,
+                OperationState.EXPIRED,
+            },
+            OperationState.READY: {
+                OperationState.SUCCEEDED,
+                OperationState.DENIED,
+                OperationState.EXPIRED,
+                OperationState.FAILED,
+                OperationState.TIMED_OUT,
+            },
+        }
+        if not isinstance(target, OperationState) or target not in allowed.get(self.state, set()):
+            raise InvariantViolation("INVALID_OPERATION_TRANSITION")
+        updated = copy(self)
+        object.__setattr__(updated, "_state", target)
+        return updated
