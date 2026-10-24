@@ -51,6 +51,7 @@ def executor(database, clock, factory=None):
         clock,
         SimpleNamespace(sleep=lambda seconds: pytest.fail("unexpected sleep")),
         SimpleNamespace(get_principal=lambda principal_id: principal_fixture.__wrapped__()),
+        recovery_unit_of_work=lambda: SqliteUnitOfWork(database),
     )
 
 
@@ -86,9 +87,9 @@ def test_offline_balance_execution_durable_after_reopen(database, principal, clo
     finally:
         connection.close()
     events = SqliteAuditReadRepository(database).list(AuditPage())
-    assert len(events) == 3
-    assert isinstance(events[1].event, OperationDispatchedEvent)
-    assert isinstance(events[2].event, OperationExecutedEvent)
+    assert len(events) == 4
+    assert isinstance(events[2].event, OperationDispatchedEvent)
+    assert isinstance(events[3].event, OperationExecutedEvent)
     assert all(record.event.operation_id == operation.id for record in events)
     assert (
         events[1].event.fingerprint == events[2].event.fingerprint == operation.request.fingerprint
@@ -124,9 +125,9 @@ def test_execution_evidence_failure_rolls_back(database, principal, clock, failu
             ExecuteOperationCommand(principal, operation.id)
         )
     stored = SqliteOperationReadRepository(database).get(operation.id)
-    assert stored.operation == operation and stored.result is None
+    assert stored.operation == operation.transition(OperationState.FAILED) and stored.result is None
     assert balances(database) == before
-    assert len(SqliteAuditReadRepository(database).list(AuditPage())) == 1
+    assert len(SqliteAuditReadRepository(database).list(AuditPage())) == 3
 
 
 def test_adapters_have_no_transaction_or_io_capability(principal, clock):
@@ -166,6 +167,7 @@ def test_existing_audit_http_adapter_can_render_execution_evidence(database, pri
     )
     assert [event.event_type for event in response.events] == [
         "OPERATION_REQUESTED",
+        "OPERATION_ATTEMPTED",
         "OPERATION_DISPATCHED",
         "OPERATION_EXECUTED",
     ]

@@ -33,6 +33,7 @@ from agentgate.infrastructure.repositories.sqlite_operation_read_repository impo
     SqliteOperationReadRepository,
 )
 from tests.application.test_secure_transfer_handler import grant, transfer_operation
+from tests.infrastructure.execution_assertions import assert_rolled_back
 from tests.infrastructure.test_balance_execution import balances, registry
 from tests.infrastructure.test_secure_transfer_execution import persist_transfer
 
@@ -62,6 +63,7 @@ def handler(database, principal, clock, tools, factory=None):
         clock,
         SimpleNamespace(sleep=lambda _: pytest.fail("unexpected retry")),
         SimpleNamespace(get_principal=lambda _: principal),
+        recovery_unit_of_work=lambda: SqliteUnitOfWork(database),
     )
 
 
@@ -87,7 +89,9 @@ def race(database, principal, clock, operations, monkeypatch):
         connections.append(connection)
         worker.connection = connection
         try:
-            barrier.wait()
+            if not getattr(worker, "started", False):
+                worker.started = True
+                barrier.wait()
         except BaseException:
             connection.close()
             raise
@@ -111,7 +115,8 @@ def race(database, principal, clock, operations, monkeypatch):
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             outcomes = list(pool.map(execute, range(2)))
-    assert len(connections) == 2 and connections[0] is not connections[1]
+    assert len(connections) >= 3
+    assert len({id(connection) for connection in connections}) == len(connections)
     return outcomes, tools
 
 
@@ -248,8 +253,12 @@ def test_commit_boundary_failure_and_restart(database, principal, clock, approve
             raise StorageUnavailable
 
     interrupted = handler(database, principal, clock, tools, lambda: InterruptedWork(database))
-    with pytest.raises(StorageUnavailable if boundary == "uncertain_commit" else SimulatedCrash):
-        interrupted.handle(ExecuteOperationCommand(principal, operation.id))
+    if boundary == "uncertain_commit":
+        recovered = interrupted.handle(ExecuteOperationCommand(principal, operation.id))
+        assert recovered.operation.state == OperationState.SUCCEEDED
+    else:
+        with pytest.raises(SimulatedCrash):
+            interrupted.handle(ExecuteOperationCommand(principal, operation.id))
     assert tools.calls == [operation.request.arguments]
     assert len(staged) == 1
     assert confirmed == ([True] if boundary == "confirmed_commit" else [])
@@ -261,7 +270,7 @@ def test_commit_boundary_failure_and_restart(database, principal, clock, approve
     stored = SqliteOperationReadRepository(database).get(operation.id)
     committed = boundary in {"confirmed_commit", "uncertain_commit"}
     if not committed:
-        assert snapshot(database) == before
+        assert_rolled_back(database, before)
         assert stored.operation == operation and stored.result is None
         assert execution_events(database, OperationExecutedEvent) == []
         assert execution_events(database, OperationDispatchedEvent) == []

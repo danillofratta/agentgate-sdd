@@ -2,8 +2,10 @@ from dataclasses import dataclass
 
 from agentgate.domain.events.approval_decided_event import ApprovalDecidedEvent
 from agentgate.domain.events.approval_expired_event import ApprovalExpiredEvent
+from agentgate.domain.events.operation_attempted_event import OperationAttemptedEvent
 from agentgate.domain.events.operation_dispatched_event import OperationDispatchedEvent
 from agentgate.domain.events.operation_executed_event import OperationExecutedEvent
+from agentgate.domain.events.operation_failed_event import OperationFailedEvent
 from agentgate.domain.events.operation_requested_event import OperationRequestedEvent
 from agentgate.domain.exceptions.invariant_violation import InvariantViolation
 
@@ -18,6 +20,8 @@ class AuditRecord:
         | ApprovalDecidedEvent
         | ApprovalExpiredEvent
         | OperationExecutedEvent
+        | OperationAttemptedEvent
+        | OperationFailedEvent
         | OperationDispatchedEvent
     )
 
@@ -32,6 +36,8 @@ class AuditRecord:
                 ApprovalExpiredEvent,
                 OperationExecutedEvent,
                 OperationDispatchedEvent,
+                OperationAttemptedEvent,
+                OperationFailedEvent,
             ),
         ):
             raise InvariantViolation("INVALID_AUDIT_EVENT")

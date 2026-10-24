@@ -21,9 +21,12 @@ class AuditEventResponse(BaseModel):
         "APPROVAL_EXPIRED",
         "OPERATION_DISPATCHED",
         "OPERATION_EXECUTED",
+        "OPERATION_ATTEMPTED",
+        "OPERATION_FAILED",
     ] = "OPERATION_REQUESTED"
     approver_id: str | None = None
     fingerprint: str | None = None
+    attempt: int | None = None
 
 
 class AuditPageResponse(BaseModel):

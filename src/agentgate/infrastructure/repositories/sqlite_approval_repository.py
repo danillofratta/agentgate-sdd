@@ -71,6 +71,8 @@ class SqliteApprovalRepository:
                 expected_operation = approval.operation.authorize_execution(
                     operation.execution_authorization
                 ).transition(OperationState.SUCCEEDED)
+            if operation.state in (OperationState.FAILED, OperationState.TIMED_OUT):
+                expected_operation = expected_operation.transition(operation.state)
             if approval.state.value != row["status"] or expected_operation != operation:
                 raise StorageUnavailable
             return approval

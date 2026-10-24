@@ -8,6 +8,7 @@ from agentgate.application.ports.request_unit_of_work import RequestUnitOfWork
 from agentgate.application.ports.sleeper_gateway import SleeperGateway
 from agentgate.application.ports.tool_registry_gateway import ToolRegistryGateway
 from agentgate.domain.entities.account import Account
+from agentgate.domain.entities.approval import Approval
 from agentgate.domain.entities.operation import Operation
 from agentgate.domain.events.operation_dispatched_event import OperationDispatchedEvent
 from agentgate.domain.policies.operation_policy import CURRENT_POLICY_VERSION
@@ -46,13 +47,13 @@ class Harness:
     def retry_delay(self, deadline: ExecutionDeadline) -> None:
         self._sleeper.sleep(min(0.05, deadline.remaining()))
 
-    def run(
+    def prepare(
         self,
         work: RequestUnitOfWork,
         operation: Operation,
         principal: Principal,
         deadline: ExecutionDeadline,
-    ) -> ExecuteOperationResult:
+    ) -> tuple[tuple[AccountFacts, ...], Approval | None, Operation]:
         if operation.request.tool not in (Tool.GET_BALANCE, Tool.SIMULATE_TRANSFER):
             raise Forbidden
         if operation.state != OperationState.READY:
@@ -100,6 +101,17 @@ class Harness:
             policy.version,
         )
         authorized = operation.authorize_execution(authorization)
+        return accounts, consumed, authorized
+
+    def run(
+        self,
+        work: RequestUnitOfWork,
+        operation: Operation,
+        principal: Principal,
+        deadline: ExecutionDeadline,
+    ) -> ExecuteOperationResult:
+        accounts, consumed, authorized = self.prepare(work, operation, principal, deadline)
+        args = operation.request.arguments
         deadline.remaining()
         work.audit.append(
             OperationDispatchedEvent(

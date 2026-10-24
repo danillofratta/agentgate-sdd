@@ -2,6 +2,7 @@ import sqlite3
 from types import TracebackType
 from typing import Self
 
+from agentgate.application.exceptions.commit_uncertain import CommitUncertain
 from agentgate.application.exceptions.execution_timed_out import ExecutionTimedOut
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.application.exceptions.transient_storage_lock import TransientStorageLock
@@ -28,6 +29,7 @@ class SqliteUnitOfWork:
         self._connection: sqlite3.Connection | None = None
         self._deadline: ExecutionDeadline | None = None
         self._commit_started = False
+        self.rollback_confirmed = False
         self.operations: OperationRepository
         self.accounts: AccountRepository
         self.approvals: ApprovalRepository
@@ -53,6 +55,7 @@ class SqliteUnitOfWork:
             raise StorageUnavailable
         connection = connect(self._path)
         self._commit_started = False
+        self.rollback_confirmed = False
         try:
             if self._deadline is not None:
                 if not isinstance(connection, DeadlineConnection):
@@ -67,6 +70,7 @@ class SqliteUnitOfWork:
                     connection.rollback()
                     if connection.in_transaction:
                         raise StorageUnavailable
+                    self.rollback_confirmed = True
                 except sqlite3.Error:
                     raise StorageUnavailable from None
                 if isinstance(error, sqlite3.Error):
@@ -96,6 +100,8 @@ class SqliteUnitOfWork:
             self._commit_started = True
             self._connection.commit()
         except sqlite3.Error:
+            if self._commit_started:
+                raise CommitUncertain from None
             raise StorageUnavailable from None
 
     def rollback(self) -> None:
@@ -106,6 +112,7 @@ class SqliteUnitOfWork:
             self._connection.rollback()
             if self._connection.in_transaction:
                 raise StorageUnavailable
+            self.rollback_confirmed = not self._commit_started
         except sqlite3.Error:
             raise StorageUnavailable from None
 
@@ -117,11 +124,24 @@ class SqliteUnitOfWork:
     ) -> None:
         if self._connection is not None:
             try:
-                self.rollback()
+                try:
+                    self.rollback()
+                except Exception:
+                    if self._commit_started:
+                        raise CommitUncertain from None
+                    raise StorageUnavailable from None
+                if isinstance(exc, Exception) and self._commit_started:
+                    raise CommitUncertain from None
                 if isinstance(exc, sqlite3.Error):
                     self._raise_failure(exc, self._connection)
             finally:
-                self._connection.close()
-                self._connection = None
+                try:
+                    self._connection.close()
+                except sqlite3.Error:
+                    if self._commit_started:
+                        raise CommitUncertain from None
+                    raise StorageUnavailable from None
+                finally:
+                    self._connection = None
         if isinstance(exc, sqlite3.Error):
             raise StorageUnavailable from None

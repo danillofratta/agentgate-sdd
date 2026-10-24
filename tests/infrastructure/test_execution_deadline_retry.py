@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from agentgate.application.exceptions.execution_timed_out import ExecutionTimedOut
+from agentgate.application.exceptions.execution_unavailable import ExecutionUnavailable
 from agentgate.application.exceptions.forbidden import Forbidden
 from agentgate.application.exceptions.not_found import NotFound
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
@@ -24,6 +25,7 @@ from agentgate.features.execute_operation.handler import ExecuteOperationHandler
 from agentgate.infrastructure.persistence.database import connect
 from agentgate.infrastructure.persistence.deadline_connection import DeadlineConnection
 from agentgate.infrastructure.persistence.sqlite_unit_of_work import SqliteUnitOfWork
+from tests.infrastructure.execution_assertions import assert_rolled_back
 from tests.infrastructure.test_concurrent_execution_recovery import CountingTools, snapshot
 from tests.infrastructure.test_secure_transfer_execution import persist_transfer
 
@@ -42,6 +44,7 @@ def executor(database, principal, clock, *, factory=None, tools=None, sleep=None
         clock,
         SimpleNamespace(sleep=sleep or (lambda _: pytest.fail("unexpected retry"))),
         principals or SimpleNamespace(get_principal=lambda _: principal),
+        recovery_unit_of_work=lambda: SqliteUnitOfWork(database),
     )
 
 
@@ -147,22 +150,24 @@ def test_timeout_rolls_back_every_effect_and_closes_connection(
         ).handle(ExecuteOperationCommand(principal, operation.id))
     assert len(attempts) == 1
     assert len(tools.calls) == (0 if boundary == "dispatch_audit" else 1)
-    assert snapshot(database) == before
+    assert_rolled_back(database, before, state="TIMED_OUT")
     for connection in connections:
         with pytest.raises(sqlite3.ProgrammingError, match="closed"):
             sqlite3.Connection.execute(connection, "UPDATE accounts SET balance_cents=0")
     clock.elapsed += 100
-    assert snapshot(database) == before
+    assert_rolled_back(database, before, state="TIMED_OUT")
 
 
 def test_deadline_before_first_attempt_never_opens_transaction(database, principal, clock):
     operation = persist_transfer(database, principal, clock, False)
     readings = iter([0.0, 2.0])
-    clock.monotonic = lambda: next(readings)
+    clock.monotonic = lambda: next(readings, 2.0)
+    before = snapshot(database)
     with pytest.raises(ExecutionTimedOut):
         executor(database, principal, clock, factory=lambda: pytest.fail("late attempt")).handle(
             ExecuteOperationCommand(principal, operation.id)
         )
+    assert_rolled_back(database, before, state="TIMED_OUT", attempts=0)
 
 
 @pytest.mark.parametrize(
@@ -191,7 +196,7 @@ def test_only_rolled_back_locks_retry_and_replay_one_durable_effect(
 
     def sleep(seconds):
         assert attempts[0]._connection is None  # rollback and close precede delay
-        assert snapshot(database) == before
+        assert_rolled_back(database, before)
         assert 0 < seconds <= 0.05
         delays.append(seconds)
         clock.elapsed += seconds
@@ -255,7 +260,12 @@ def test_retry_exhaustion_and_single_delay_with_original_deadline(
         ).handle(ExecuteOperationCommand(principal, operation.id))
     assert len(delays) == 1 and 0 < delays[0] <= 0.05
     assert len(attempts) == len(tools.calls) == (2 if remaining == 2 else 1)
-    assert snapshot(database) == before
+    assert_rolled_back(
+        database,
+        before,
+        state="FAILED" if remaining == 2 else "TIMED_OUT",
+        attempts=2 if remaining == 2 else 1,
+    )
 
 
 @pytest.mark.parametrize("changed", ["permissions", "funds", "expiry", "ownership", "policy"])
@@ -311,7 +321,7 @@ def test_retry_reloads_authorization_funds_approval_owner_and_policy(
             sleep=sleep,
             principals=SimpleNamespace(get_principal=lambda _: current),
         ).handle(ExecuteOperationCommand(principal, operation.id))
-    assert len(attempts) == 2 and len(delays) == 1 and len(tools.calls) == 1
+    assert len(attempts) == 1 and len(delays) == 1 and len(tools.calls) == 1
     assert snapshot(database) == expected[0]
 
 
@@ -336,12 +346,14 @@ def test_unknown_nonretryable_errors_dispatch_once(database, principal, clock, e
             hook(self, "credit", lambda: (_ for _ in ()).throw(error))
             return self
 
-    with pytest.raises(StorageUnavailable if isinstance(error, sqlite3.Error) else RuntimeError):
+    with pytest.raises(
+        StorageUnavailable if isinstance(error, sqlite3.Error) else ExecutionUnavailable
+    ):
         executor(
             database, principal, clock, factory=lambda: BrokenWork(database), tools=tools
         ).handle(ExecuteOperationCommand(principal, operation.id))
     assert len(attempts) == len(tools.calls) == 1
-    assert snapshot(database) == before
+    assert_rolled_back(database, before, state="FAILED")
 
 
 @pytest.mark.parametrize("committed", [False, True])
@@ -358,11 +370,13 @@ def test_uncertain_commit_never_retried_even_if_lock_shaped(database, principal,
             self._commit_started = True
             raise lock_error()
 
-    with pytest.raises(StorageUnavailable) as caught:
-        executor(
-            database, principal, clock, factory=lambda: UncertainWork(database), tools=tools
-        ).handle(ExecuteOperationCommand(principal, operation.id))
-    assert type(caught.value) is StorageUnavailable
+    run = executor(database, principal, clock, factory=lambda: UncertainWork(database), tools=tools)
+    if committed:
+        result = run.handle(ExecuteOperationCommand(principal, operation.id))
+        assert result.operation.state == OperationState.SUCCEEDED
+    else:
+        with pytest.raises(StorageUnavailable):
+            run.handle(ExecuteOperationCommand(principal, operation.id))
     assert len(attempts) == len(tools.calls) == 1
 
 
@@ -423,7 +437,7 @@ def test_begin_lock_is_classified_only_after_rollback(database, principal, clock
     original = DeadlineConnection.execute
 
     def execute(connection, sql, parameters=()):
-        if sql == "BEGIN IMMEDIATE":
+        if sql == "BEGIN IMMEDIATE" and getattr(connection, "execution_fault", False):
             attempts.append(connection)
             if len(attempts) == 1:
                 raise lock_error()
@@ -435,10 +449,29 @@ def test_begin_lock_is_classified_only_after_rollback(database, principal, clock
         delays.append(seconds)
         clock.elapsed += seconds
 
+    class BeginLockWork(SqliteUnitOfWork):
+        def set_deadline(self, deadline):
+            super().set_deadline(deadline)
+
+        def __enter__(self):
+            original_connect = connect
+
+            def tagged_connect(path):
+                connection = original_connect(path)
+                connection.execution_fault = True
+                return connection
+
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    "agentgate.infrastructure.persistence.sqlite_unit_of_work.connect",
+                    tagged_connect,
+                )
+                return super().__enter__()
+
     monkeypatch.setattr(DeadlineConnection, "execute", execute)
-    result = executor(database, principal, clock, sleep=sleep).handle(
-        ExecuteOperationCommand(principal, operation.id)
-    )
+    result = executor(
+        database, principal, clock, sleep=sleep, factory=lambda: BeginLockWork(database)
+    ).handle(ExecuteOperationCommand(principal, operation.id))
     assert result.operation.state == OperationState.SUCCEEDED
     assert len(attempts) == 2 and delays == [0.05]
 
@@ -462,7 +495,7 @@ def test_failed_rollback_never_becomes_retryable(database, principal, clock):
             database, principal, clock, factory=lambda: RollbackFailure(database), tools=tools
         ).handle(ExecuteOperationCommand(principal, operation.id))
     assert type(caught.value) is StorageUnavailable and len(tools.calls) == 1
-    assert snapshot(database) == before
+    assert_rolled_back(database, before)
 
 
 def test_deadline_before_first_mutation_has_no_audit_or_dispatch(database, principal, clock):
@@ -480,7 +513,8 @@ def test_deadline_before_first_mutation_has_no_audit_or_dispatch(database, princ
     run._harness._policy = SimpleNamespace(evaluate=expires_during_policy)
     with pytest.raises(ExecutionTimedOut):
         run.handle(ExecuteOperationCommand(principal, operation.id))
-    assert tools.calls == [] and snapshot(database) == before
+    assert tools.calls == []
+    assert_rolled_back(database, before, state="TIMED_OUT", attempts=0)
 
 
 def test_adapter_rechecks_deadline_after_harness_mutation_check(database, principal, clock):
@@ -504,40 +538,31 @@ def test_adapter_rechecks_deadline_after_harness_mutation_check(database, princi
         executor(
             database, principal, clock, tools=tools, factory=lambda: DelayedRepository(database)
         ).handle(ExecuteOperationCommand(principal, operation.id))
-    assert len(tools.calls) == 1 and snapshot(database) == before
+    assert len(tools.calls) == 1
+    assert_rolled_back(database, before, state="TIMED_OUT")
 
 
-def test_real_sqlite_busy_retry_releases_lock_after_closed_attempt(database, principal, clock):
+def test_real_sqlite_busy_attempt_audit_failure_prevents_dispatch(database, principal, clock):
     operation = persist_transfer(database, principal, clock, False)
     lock = connect(database)
     lock.execute("BEGIN IMMEDIATE")
-    attempts, delays = [], []
     tools = CountingTools()
-    # Sub-millisecond remainder forces busy_timeout=0, so this test never waits for a lock.
-    clock.elapsed = 0.0
 
     class ZeroWait(SqliteUnitOfWork):
         def set_deadline(self, deadline):
-            # Keep the original execution deadline; set a fake elapsed time before BEGIN.
             super().set_deadline(deadline)
             clock.elapsed = 1.9999
-            attempts.append(self)
 
-    def sleep(seconds):
-        assert attempts[0]._connection is None
-        delays.append(seconds)
-        assert 0 < seconds < 0.001
-        lock.rollback()
-        # Model an undersleep, retaining enough of the original budget for the retry.
-
+    run = executor(database, principal, clock, tools=tools)
+    run._recovery_work = lambda: ZeroWait(database)
     try:
-        result = executor(
-            database, principal, clock, tools=tools, factory=lambda: ZeroWait(database), sleep=sleep
-        ).handle(ExecuteOperationCommand(principal, operation.id))
+        with pytest.raises(StorageUnavailable):
+            run.handle(ExecuteOperationCommand(principal, operation.id))
     finally:
         lock.close()
-    assert result.operation.state == OperationState.SUCCEEDED
-    assert len(attempts) == 2 and len(delays) == len(tools.calls) == 1
+    assert tools.calls == []
+    with SqliteUnitOfWork(database) as work:
+        assert work.operations.get(operation.id) == operation
 
 
 def test_second_attempt_still_expires_at_original_deadline(database, principal, clock):
@@ -579,7 +604,7 @@ def test_second_attempt_still_expires_at_original_deadline(database, principal, 
             sleep=sleep,
         ).handle(ExecuteOperationCommand(principal, operation.id))
     assert len(attempts) == len(tools.calls) == 2 and delays == [0.05]
-    assert snapshot(database) == before
+    assert_rolled_back(database, before, state="TIMED_OUT", attempts=2)
 
 
 def test_actual_commit_crossing_deadline_keeps_progress_cancellation_disabled(
@@ -589,7 +614,8 @@ def test_actual_commit_crossing_deadline_keeps_progress_cancellation_disabled(
     commit = DeadlineConnection.commit
 
     def delayed_commit(connection):
-        clock.elapsed = 2.1
+        if connection.execute("SELECT state FROM operations").fetchone()[0] == "SUCCEEDED":
+            clock.elapsed = 2.1
         commit(connection)
 
     monkeypatch.setattr(DeadlineConnection, "commit", delayed_commit)
