@@ -1,9 +1,11 @@
-# Interactive lab — Milestones A and B
+# Interactive lab — Milestones A, B and C
 
 This local simulation adds PostgreSQL and a browser to the authorization harness.
 Milestone B adds a real authenticated MCP server calling the same FastAPI API.
-No real funds, LLM provider or external execution tools are involved. The single
-OpenSpec change `add-interactive-lab` tracks A, B and C; C remains unimplemented.
+Milestone C adds optional conversational AI through the real MCP client boundary.
+No real funds or external execution tools are involved. A provider key enables
+billable model requests; without it, chat is disabled and the manual lab works.
+The single OpenSpec change `add-interactive-lab` tracks all three milestones.
 
 ## Windows startup
 
@@ -61,10 +63,13 @@ The human buttons represent a separate synthetic approver in a single-user
 teaching interface, not production login or multi-user authorization. Host and
 Origin checks, fetch metadata and session-bound CSRF prevent cross-site use.
 The proxy has only fixed API methods/destinations; browser identity, URL, policy
-or authorization overrides are never trusted. A future model must not receive
+or authorization overrides are never trusted. The model never receives
 these credentials or human approval controls as agent tools.
 
 ## MCP server and official SDK client
+
+AI chat configuration and usage are documented below; the manual MCP client is
+also useful for inspecting persisted operations after losing chat memory.
 
 Compose's `mcp` service uses the official patched `mcp==2.3.0` Python SDK. It forwards
 fixed HTTP calls to `http://api:8000`; MCP has no persistence network, database
@@ -126,6 +131,85 @@ exception details are not returned or logged by the adapter.
 MCP is opt-in via `AGENTGATE_MCP_ENABLED=1` in its separate container; the default
 API does not mount MCP. Re-running startup reuses all existing secrets and
 storage, adding only a missing MCP token for an existing A installation.
+
+## AI chat provider configuration
+
+The existing frontend process hosts the server-side agent; no additional port is
+published. Its agent handler receives only a model gateway, MCP credential and
+bounded chat-memory port. The independent manual human controls continue to use
+their separate approver identity. No authentication settings, database, arbitrary
+HTTP tool, filesystem or approval tool are exposed to the model.
+
+Run startup once to create the ignored `.lab-secrets/llm_api_key` file, initially
+empty. Empty/missing keys, invalid configuration and missing model names disable
+chat without breaking manual actions or Swagger. Configure a real provider only
+when you intend to send conversation data and pay for the resulting requests.
+Use an account credential limited to synthetic lab usage, with a spending limit.
+
+For Docker, enter the provider key into that local file without placing it in
+command history (PowerShell 7):
+
+```powershell
+$providerKey = Read-Host 'Provider API key' -MaskInput
+[System.IO.File]::WriteAllText((Join-Path (Get-Location) '.lab-secrets/llm_api_key'), $providerKey)
+Remove-Variable providerKey
+$env:AGENTGATE_LLM_PROVIDER = 'openai' # or groq
+$env:AGENTGATE_LLM_MODEL = Read-Host 'Tool-capable model ID from your provider account'
+.\scripts\start_lab.ps1
+```
+
+Do not commit the secret, put it in Compose YAML, screenshots or browser inputs,
+or print environment/Compose secret contents. The existing ignored secret
+directory has restricted local access; Compose mounts the key read-only. Direct
+non-Docker startup can use `AGENTGATE_LLM_API_KEY` or its `_FILE` variant. File
+configuration takes precedence. The agent never exports these values to chat.
+
+| Variable | Default / allowed range |
+| --- | --- |
+| `AGENTGATE_LLM_PROVIDER` | `openai` or `groq` |
+| `AGENTGATE_LLM_BASE_URL` | Derived: `https://api.openai.com/v1` or `https://api.groq.com/openai/v1`; only the matching provider origin is accepted |
+| `AGENTGATE_LLM_MODEL` | Required; choose a Chat Completions function-capable model from your account; no hardcoded model fallback |
+| `AGENTGATE_LLM_API_KEY`, `AGENTGATE_LLM_API_KEY_FILE` | Required for chat; Compose uses `/run/secrets/llm_api_key` |
+| `AGENTGATE_LLM_TIMEOUT` | 20 seconds; 1–60, per provider request |
+| `AGENTGATE_LLM_MAX_TOKENS` | 512; 64–4,096 completion tokens |
+| `AGENTGATE_LLM_MAX_TOOL_CALLS` | 6; 1–12 model-requested calls per turn |
+| `AGENTGATE_LLM_MAX_HISTORY` | 12; 2–24 previous/current user/assistant messages |
+| `AGENTGATE_CHAT_MCP_URL` | Internal `http://mcp:8000/mcp`; direct host tests may use `http://127.0.0.1:8002/mcp` |
+
+The first chat turn performs one harmless forced function call to verify the
+selected model supports the configured wire contract. This costs a small extra
+request once per process; it has no business effect. Provider rejection, quota,
+unsupported tools, truncated output and timeout fail closed with sanitized errors.
+Choose sufficient output tokens for your model's reasoning plus tool response.
+No model or provider is assumed to be verified merely because it is configured.
+
+Try the five suggested prompts: Alice's balance, $1 transfer, $100.01 transfer,
+$1,000.01 transfer and last-operation status. The agent discovers exactly the
+three existing MCP tools, validates proposed arguments, supplies its own stable
+key and returns real results to the model. Balance reads may execute immediately.
+For transfers, inspect the exact operation card, use **Inspect / human review**
+when approval is pending, then **Continue / refresh** and **Execute via MCP**.
+Approval and execution confirmation are separate; typing either into chat cannot
+authorize them. Denial is final under the existing policy. Replay uses the same
+persisted operation ID. Audit remains available in the existing dashboard.
+
+The timeline shows sanitized discovered tools, real invocations, HTTP status,
+operation ID and policy state. Collapsible details contain validated MCP data.
+Assistant text is labeled unverified and can be wrong even when a card is correct.
+All rendering uses text nodes, with the existing restrictive CSP and CSRF boundary.
+
+If I/O becomes uncertain, use **Resume original MCP call**. A live server session
+retains the original payload and key, and blocks fresh proposals until recovery.
+There is no automatic financial retry with a new key. Chat sessions expire after
+one idle hour and are capped at 64 sessions, 32 operation cards and one active
+turn per session. Frontend restart clears chat memory; PostgreSQL retains business
+state. Keep operation IDs and use **Resume an existing operation** in the manual
+dashboard after restart. Inspect uncertain state before making another proposal.
+
+See [Milestone C verification](milestone_c_verification.md) for concrete offline,
+Docker/browser evidence and the separately opt-in billable provider smoke. No real
+provider credentials were available during implementation; live interoperability
+remains unverified. Real provider data retention and costs depend on your account.
 
 ## Persistence and recovery
 

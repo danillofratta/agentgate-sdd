@@ -1,0 +1,8 @@
+# Explicit test-only overlay. Fake LLM; all MCP/business/persistence behavior is real.
+services:
+  frontend:
+    command: [/app/.venv/bin/uvicorn, "verify_chat_app:create_app", --factory, --host, "0.0.0.0", --port, "8080", --no-access-log]
+    environment:
+      PYTHONPATH: /verification:/app/src
+    volumes:
+      - ./scripts:/verification:ro

@@ -43,7 +43,7 @@ The MCP service SHALL authenticate protocol requests with a distinct generated c
 - **THEN** the transport rejects it before authenticated API forwarding and exposes no tokens or rejected raw input
 
 ### Requirement: Real protocol and durable PostgreSQL evidence
-An official SDK client SHALL verify initialization, discovery and invocation against actual containers without mocked protocol behavior. PostgreSQL evidence SHALL prove immutable bindings, one success and conserved balances, including replay after MCP/API restart. Existing regressions and quality gates SHALL pass before B tasks are complete. Milestone C SHALL remain unimplemented.
+An official SDK client SHALL verify initialization, discovery and invocation against actual containers without mocked protocol behavior. PostgreSQL evidence SHALL prove immutable bindings, one success and conserved balances, including replay after MCP/API restart. Existing regressions and quality gates SHALL pass before B tasks are complete. During the B increment, Milestone C SHALL remain unimplemented.
 
 #### Scenario: Complete protocol workflow
 - **WHEN** real Docker verification runs

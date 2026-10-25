@@ -15,6 +15,7 @@ from agentgate.domain.repositories.audit_read_repository import AuditReadReposit
 from agentgate.domain.repositories.operation_read_repository import OperationReadRepository
 from agentgate.domain.value_objects.principal import Principal
 from agentgate.features.approve_operation.handler import ApproveOperationHandler
+from agentgate.features.chat_turn.handler import ChatTurnHandler
 from agentgate.features.evaluate_policy.handler import (
     EvaluatePolicyHandler,
 )
@@ -29,6 +30,8 @@ from agentgate.infrastructure.gateways.local_credential_gateway import LocalCred
 from agentgate.infrastructure.gateways.local_demo_api_gateway import LocalDemoApiGateway
 from agentgate.infrastructure.gateways.local_mcp_api_gateway import LocalMcpApiGateway
 from agentgate.infrastructure.gateways.local_tool_registry_gateway import LocalToolRegistryGateway
+from agentgate.infrastructure.gateways.openai_chat_gateway import OpenaiChatGateway
+from agentgate.infrastructure.gateways.sdk_agent_mcp_gateway import SdkAgentMcpGateway
 from agentgate.infrastructure.persistence.database import initialize
 from agentgate.infrastructure.persistence.postgres_database import initialize as initialize_postgres
 from agentgate.infrastructure.persistence.postgres_unit_of_work import PostgresUnitOfWork
@@ -51,9 +54,11 @@ from agentgate.infrastructure.repositories.sqlite_audit_read_repository import (
 from agentgate.infrastructure.repositories.sqlite_operation_read_repository import (
     SqliteOperationReadRepository,
 )
+from agentgate.infrastructure.runtime.chat_sessions import ChatSessions
 from agentgate.infrastructure.runtime.system_clock import SystemClock
 from agentgate.infrastructure.runtime.system_sleeper import SystemSleeper
 from agentgate.infrastructure.runtime.uuid_operation_id_generator import UuidOperationIdGenerator
+from agentgate.infrastructure.security.llm_settings import LlmSettings
 from agentgate.infrastructure.security.settings import Settings, secret, validate_token
 from agentgate.infrastructure.tools.get_balance_adapter import GetBalanceAdapter
 from agentgate.infrastructure.tools.simulate_transfer_adapter import SimulateTransferAdapter
@@ -134,6 +139,33 @@ def local_development() -> bool:
 def build_demo_gateway() -> DemoApiGateway:
     configured = Settings(secret("AGENTGATE_AGENT_TOKEN"), secret("AGENTGATE_APPROVER_TOKEN"))
     return LocalDemoApiGateway(configured.agent_token, configured.approver_token)
+
+
+def build_chat_handler() -> ChatTurnHandler | None:
+    try:
+        configured = LlmSettings.from_environment()
+        if configured is None:
+            return None
+        token = secret("AGENTGATE_MCP_TOKEN")
+        validate_token("AGENTGATE_MCP_TOKEN", token)
+        return ChatTurnHandler(
+            OpenaiChatGateway(configured, (token,)),
+            SdkAgentMcpGateway(
+                token, os.environ.get("AGENTGATE_CHAT_MCP_URL", "http://mcp:8000/mcp")
+            ),
+            ChatSessions(),
+            UuidOperationIdGenerator(),
+            configured.max_calls,
+            configured.max_history,
+            min(180.0, configured.timeout * (configured.max_calls + 2)),
+        )
+    except ValueError:
+        # Configuration failures disable chat without breaking the manual laboratory.
+        return None
+
+
+def get_chat_handler(request: Request) -> ChatTurnHandler | None:
+    return cast(ChatTurnHandler | None, request.app.state.chat_handler)
 
 
 def get_demo_gateway(request: Request) -> DemoApiGateway:

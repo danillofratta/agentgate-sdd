@@ -90,6 +90,8 @@ jobs:
               path.write_text(secrets.token_urlsafe(48), encoding='utf-8')
               os.chmod(path, 0o600)
           PY
+          sudo chgrp 10001 .lab-secrets/*
+          sudo chmod 0640 .lab-secrets/*
       - name: PostgreSQL integration tests
         run: docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
       - name: Start local lab

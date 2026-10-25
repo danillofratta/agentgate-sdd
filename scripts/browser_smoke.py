@@ -32,8 +32,15 @@ def main() -> None:
         expect(page.locator("#replay")).to_be_enabled()
         expect(page.locator("#notice")).to_contain_text("State verified")
         expect(page.locator("#alice")).to_have_text(alice)
-        expect(page.locator("#events")).to_contain_text("OPERATION_EXECUTED")
         expect(page.locator("#request-view")).to_contain_text("execute")
+        # A persistent lab may have many older pages; inspect this operation without resetting it.
+        for _ in range(100):
+            if "OPERATION_EXECUTED" in page.locator("#events").inner_text():
+                break
+            with page.expect_response(lambda r: "/lab/audit?" in r.url) as pending:
+                page.get_by_role("button", name="Load more", exact=True).click()
+            assert pending.value.json()["events"], "Current operation absent from audit"
+        expect(page.locator("#events")).to_contain_text("OPERATION_EXECUTED")
         page.screenshot(path=str(artifacts / "lab-approved.png"), full_page=True)
         page.get_by_role("button", name="$1,000.01 · Deny", exact=True).click()
         page.get_by_role("button", name="Submit for policy evaluation", exact=False).click()

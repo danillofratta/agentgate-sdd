@@ -41,8 +41,8 @@ to the existing local AGENT, with no multi-user OAuth claim. Approval stays in
 the independent existing human workflow. Real official-SDK Docker smoke covers
 initialization, discovery, modern negotiation, policy, human approval,
 concurrency, immutable PostgreSQL bindings and replay after API/MCP restart.
-Offline tests still forbid network/subprocess access. C remains unimplemented;
-this B increment creates no new branch, commit, push or archive.
+Offline tests still forbid network/subprocess access. B created no new branch,
+commit, push or archive; C is separately authorized below.
 
 ## Risks / Trade-offs
 
@@ -56,3 +56,44 @@ this B increment creates no new branch, commit, push or archive.
 ## Migration Plan
 
 Validate the complete A/B/C artifacts first, then apply A on the current branch. Preserve SQLite as default and run its full regression suite. Initialize PostgreSQL only on explicit selected configuration; no automatic data copy. Build Compose, run integration and smoke tests, exercise all decisions and replay across container restart, then document verified results. Roll back deployment by stopping containers without deleting the data volume or secrets. B is authorized on the current branch without creating branches, commits, pushes or archive. Continue C only after separate authorization under this change.
+
+## Milestone C agent decisions
+
+C is now explicitly authorized on the existing `feat/llm_and_chat` branch, as
+clarified by the user. Preserve all A/B domain policy and financial semantics;
+no new branch, commit, push or archival is authorized.
+
+The existing frontend proxy hosts a framework-free `chat_turn` command handler
+with injected model, official-SDK MCP client, bounded process-local chat sessions
+and operation-ID generator ports. Infrastructure adapters handle HTTPS provider
+requests and authenticated Streamable HTTP; the orchestrator never bypasses MCP
+with direct FastAPI or repository calls. No new framework, public port, business
+tool or persistence contract is needed.
+
+Configure OpenAI or Groq and a model through environment/file secrets, with exact
+provider origins, finite timeout/token/call/history limits and a forced harmless
+function capability probe. Missing keys/configuration disable chat while manual
+controls remain operational. Offline CI uses deterministic fake providers and
+in-memory real MCP protocol exchanges. A separately explicit test overlay permits
+browser/Docker QA with a fake LLM and actual MCP/API/PostgreSQL; it is never a
+production fallback. Real-provider verification is opt-in and reported unverified
+when valid credentials are unavailable.
+
+The model sees discovered allowed MCP schemas, without the backend-owned
+idempotency key. Strict validation and domain values reject unknown tools,
+roles, extra fields and malformed arguments. Transfer execution requires an
+explicit UI command granting one invocation for that exact known operation ID;
+user text grants neither execution nor business approval. Approval stays in the
+independent human adapter. Balance reads can execute automatically. Actual API
+handlers retain authority over policy, funds, ownership, immutable bindings and
+replay. Sanitized MCP operation cards and events are distinct from model prose,
+which is explicitly unverified.
+
+A pending mutation records its original payload/key before I/O and blocks new
+proposals until explicit identical recovery. Timeouts, disconnection and
+cancellation cannot cause automatic retry with a fresh key. Chat is bounded to
+64 sessions, 32 cards, one active turn/session and one-hour idle TTL; frontend
+restart clears chat memory, while PostgreSQL business state remains durable.
+After losing session memory, users must inspect existing operations before
+creating another proposal. This local single synthetic identity lab is not
+production multi-user authorization or a guarantee of model correctness.

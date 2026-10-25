@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define a future conversational simulation interface whose model can propose actions but cannot authorize them or bypass AgentGate's execution safeguards.
+Define a conversational simulation interface whose model can propose actions but cannot authorize them or bypass AgentGate's execution safeguards.
 
 ## ADDED Requirements
 

@@ -175,7 +175,7 @@ entered commit/fsync are not hard real-time interruptible; committed results
 are reported truthfully. See [execution](execution_harness.md) and
 [persistence/recovery](persistence.md).
 
-## Future integrations
+## Lab and agent integrations
 
 Milestone A's optional PostgreSQL deployment and local browser adapters are
 described in [interactive lab](interactive_lab.md). One configured database still
@@ -197,8 +197,50 @@ The SDK manages protocol compatibility and lifespan; PostgreSQL owns replay.
 All local MCP clients map to one synthetic agent, not independent OAuth users.
 See [MCP verification](milestone_b_verification.md).
 
-There is no LLM integration. Future inbound adapters must not provide policy
-overrides, replacement approved arguments or direct tool/database access.
+Milestone C adds the `chat_turn` command slice to `lab.py`. Its framework-free
+handler constructor receives `LlmGateway`, `AgentMcpGateway`,
+`ChatSessionsGateway` and `OperationIdGeneratorGateway`. Concrete wiring remains
+in `dependencies.py`. `OpenaiChatGateway` speaks configured OpenAI-compatible
+Chat Completions over HTTPS; `SdkAgentMcpGateway` uses the installed official MCP
+client over Streamable HTTP. It never calls FastAPI directly. Every financial
+execution still reaches the existing Runtime Harness. There are no new business
+tools, policy rules or repositories.
+
+```mermaid
+flowchart LR
+    Browser[Local browser + session CSRF] --> Chat[Chat command handler]
+    Chat --> LLM[Configured provider gateway]
+    LLM --> Untrusted[Untrusted tool suggestions]
+    Untrusted --> Chat
+    Chat --> Client[Official MCP SDK client]
+    Client --> MCP[Authenticated MCP server]
+    MCP --> API[Existing FastAPI + harness]
+    API --> DB[(PostgreSQL)]
+    Browser --> Human[Explicit independent human controls]
+    Human --> API
+```
+
+Model suggestions are validated against a fixed three-tool allowlist and domain
+values. Submission keys belong to the backend. A pending mutation retains its
+exact key/arguments across timeout/cancellation and explicit recovery. A transfer
+execute command grants only one invocation for that exact known ID; user text
+cannot create this grant or satisfy business approval. Balance reads may execute
+automatically. Human approve/reject is absent from all agent/model ports.
+
+Chat sessions are process-local, capped, time-limited and isolated by the lab's
+signed session boundary. Only PostgreSQL business operations are durable. The
+browser shows model prose as unverified, separate from validated MCP operation
+cards, status, decisions and tool events. Tool results are data, never system
+instructions. Provider/MCP credentials remain server-side. The proxy process is
+trusted and cohosts the existing manual human workflow; production multi-user
+identity and process isolation remain outside the local lab.
+
+Provider function-calling support is probed before business use, with bounded
+calls, context, tokens, timeouts and response size. No model framework, recursive
+dispatch, arbitrary network tool or new public port is introduced. See
+[C verification](milestone_c_verification.md) for limits, fake-provider protocol
+coverage and the separately opt-in real-provider test. Inbound adapters never
+provide policy overrides, replacement approved arguments or direct tool/database access.
 A future outbound integration would
 implement an application `Gateway` under infrastructure; persistence remains a
 domain `Repository`. Add an `EventPublisher` only for a real publishing use case.
@@ -206,4 +248,5 @@ domain `Repository`. Add an `EventPublisher` only for a real publishing use case
 Remote side effects require a separately reviewed specification for external
 idempotency, cancellation, reconciliation and distributed failures. Local SQLite
 atomicity is not a production-grade distributed transaction. No remote service,
-paid service is required by the local MCP deployment.
+paid service is required by the manual/MCP deployment. Optional AI chat uses a
+separately configured paid provider and sends bounded conversation context to it.
