@@ -3,8 +3,8 @@
 AgentGate is a local, simulation-only reference project for controlling agent
 actions. It makes deterministic authorization, independent approval, bounded
 execution, idempotency and transactional audit observable in a small financial
-simulation, with a real local MCP server and without paid services, financial
-credentials or an LLM.
+simulation, with a real local MCP server and optional server-side conversational
+AI. The manual lab needs no paid service; provider-backed chat requires a key.
 
 **No real money moves.** Only `get_balance` and `simulate_transfer` operate on
 local seeded USD accounts. This is educational reference code, not a production
@@ -108,7 +108,9 @@ the independently generated local MCP credential; server-side AGENT credentials
 stay in the MCP container. Human approval remains a separate frontend/API action.
 This static local identity model is not production multi-user OAuth. See the
 [Milestone B evidence](docs/milestone_b_verification.md) and lab guide for client
-examples, transport security and durable replay. Milestone C is unimplemented.
+examples, transport security and durable replay. Milestone C adds optional AI chat;
+see [configuration and usage](docs/interactive_lab.md#ai-chat-provider-configuration)
+and [C verification evidence](docs/milestone_c_verification.md).
 The original SQLite setup below remains available.
 
 Use PowerShell from the repository root. Generate two independent ephemeral
@@ -260,8 +262,10 @@ operation/approval/audit envelopes include `simulation: true`.
 
 ## Limitations and contributing
 
-No real money movement, external LLM integration, arbitrary tools, remote
-identity service or production-grade distributed transactions are implemented.
+No real money movement, arbitrary tools, remote identity service or
+production-grade distributed transactions are implemented. Optional LLM calls
+send conversation context to the configured provider and can incur charges.
+Model prose is unverified; only AgentGate results establish operation state.
 The runtime assumes one trusted local host and one selected SQLite/PostgreSQL database. Credentials,
 host clock and database administrator are trusted; audit is neither tamper-proof
 nor externally witnessed. Two-second deadlines are cooperative, not hard

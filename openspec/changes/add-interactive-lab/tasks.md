@@ -1,6 +1,6 @@
 # Tasks
 
-One change, three milestone deliverables. B is now authorized on the current branch, with no new branches, commits, pushes or archive. C requires separate authorization. One Pull Request per milestone.
+One change, three milestone deliverables. C is authorized on the existing feat/llm_and_chat branch by explicit user clarification, with no new branches, commits, pushes or archive. One Pull Request per milestone.
 
 ## 1. Milestone A — Persistent interactive local lab
 
@@ -15,12 +15,12 @@ One change, three milestone deliverables. B is now authorized on the current bra
 - [x] 2.1 Implement the official pinned stable MCP Python SDK with Streamable HTTP at loopback port 8002, explicit SDK lifespan, distinct inbound credential and server-side AGENT API credential. Expose exactly request_operation, get_operation and execute_operation through the existing FastAPI HTTP API; enforce bounded strict schemas, exact Host/Origin allowlists, DNS rebinding protection, timeouts and sanitized errors. Extend Compose and existing startup with persistent storage, generated secret, API dependency and MCP readiness; document endpoint, real SDK client and local identity limits.
 - [x] 2.2 Verify real MCP initialization, discovery and invocation, policy parity, ownership, invalid inputs, idempotency, human-only approval, immutable bindings, concurrent PostgreSQL execution, one financial effect and durable replay after MCP/API restart. Add offline protocol/transport and failure/security tests, run all A regressions and quality gates plus real Docker client verification, and record evidence in docs/milestone_b_verification.md. Preserve frontend, Swagger and all financial guarantees; stop before C.
 
-## 3. Milestone C — LLM agent and chat (future implementation)
+## 3. Milestone C — LLM agent and chat
 
 - [ ] 3.1 Implement server-side configured model gateway and chat interface proposing validated operations through MCP, displaying authoritative intent/decision/status and explicit execution/replay. Verify fake-provider and fake-MCP workflows, bounded failures and secret isolation; document configuration on the single C branch.
 - [ ] 3.2 Verify prompt injection, malformed output, provider outages, ownership, changed approved arguments and fabricated success cannot bypass policy or human approval. Run A/B regressions and document the complete three-milestone workflow and trust boundaries before completing C.
 
 ## Workflow follow-up
 
-- Review the coherent A/B deliverables without creating another branch or committing/pushing.
-- Implement C only after separate authorization. Archive only on a separate explicit request.
+- Review the coherent A/B/C deliverables without creating another branch or committing/pushing.
+- Stop after C. Archive only on a separate explicit request.

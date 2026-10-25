@@ -80,3 +80,51 @@ el("more-audit").addEventListener("click",()=>action(()=>audit(true)));
 el("filter-operation").addEventListener("change",renderAudit);
 async function start(){newKey();try{const response=await fetch("/lab/session",{credentials:"same-origin"});if(!response.ok)throw new Error("Unable to establish local session.");csrf=(await response.json()).csrf;await balances();await audit();const saved=localStorage.getItem("agentgate-operation");if(saved){el("restore-id").value=saved;await loadOperation(saved,false);}notice("Local lab ready. Choose an amount, then submit an intent.");}catch(error){notice(error.message,true);}}
 start();
+
+let chatAvailable=false, chatBusy=false, chatPending=false, chatData=null, chatTimeline=[];
+function chatControls() {
+  el("chat-input").disabled=el("chat-send").disabled=!chatAvailable||chatBusy||chatPending;
+  el("chat-retry").hidden=!chatPending;
+  el("chat-retry").disabled=chatBusy;
+  for(const button of document.querySelectorAll("[data-prompt],#chat-operations button"))button.disabled=chatBusy||!chatAvailable;
+}
+function chatText(tag,text,className) {const node=document.createElement(tag);node.textContent=text;if(className)node.className=className;return node;}
+function renderChat(data) {
+  chatData=data;chatPending=data.retry_pending;
+  el("chat-messages").replaceChildren();
+  for(const message of data.messages){const row=chatText("article","","chat-message "+message.role);row.append(chatText("strong",message.role==="user"?"You":"Assistant · model text, unverified"),chatText("p",message.content));el("chat-messages").append(row);}
+  el("chat-messages").scrollTop=el("chat-messages").scrollHeight;
+  el("chat-operations").replaceChildren();
+  for(const op of [...data.operations].reverse()){
+    const card=chatText("article","","chat-card");card.append(chatText("strong",op.decision+" · "+op.state),chatText("small",op.id),chatText("p",op.tool+" · HTTP "+op.http_status),chatText("pre",pretty(op.arguments)));
+    if(op.state==="PENDING_APPROVAL")card.append(chatText("p","Pending independent human approval. Review exact arguments using the human controls below.","pending-note"));
+    if(op.result)card.append(chatText("pre",pretty(op.result)));
+    const actions=chatText("div","","actions");
+    const review=chatText("button","Inspect / human review","secondary");review.type="button";review.addEventListener("click",()=>action(async()=>{await loadOperation(op.id);el("operation-detail").scrollIntoView({behavior:"smooth",block:"center"});}));
+    const refresh=chatText("button","Continue / refresh","secondary");refresh.type="button";refresh.addEventListener("click",()=>chatTurn({action:"refresh",operation_id:op.id}));
+    actions.append(review,refresh);
+    if(["READY","SUCCEEDED","FAILED","TIMED_OUT"].includes(op.state)){
+      const execute=chatText("button",op.state==="READY"?"Execute via MCP →":"Replay via MCP","primary");execute.type="button";execute.addEventListener("click",()=>chatTurn({action:"execute",operation_id:op.id}));actions.append(execute);
+    }
+    card.append(actions);
+    const technical=chatText("details","");technical.append(chatText("summary","Sanitized AgentGate result"),chatText("pre",pretty(op)));card.append(technical);el("chat-operations").append(card);
+  }
+  chatTimeline.push(...data.events);chatTimeline=chatTimeline.slice(-60);el("chat-tools").replaceChildren();
+  for(const event of chatTimeline){const detail=chatText("details","");detail.append(chatText("summary",event.type+" · "+(event.tool||"MCP discovery / limit")+(event.result?" · HTTP "+event.result.http_status:"")),chatText("pre",pretty(event)));el("chat-tools").append(detail);}
+  chatControls();
+}
+async function chatTurn(payload) {
+  if(chatBusy)return;chatBusy=true;chatControls();el("chat-status").textContent="Agent working · waiting for provider / MCP…";
+  try {
+    const data=await request("POST","/chat/turn",payload);renderChat(data);
+    el("chat-status").textContent=data.error?data.error+(data.retry_pending?" · Resume the original call; do not submit it again.":" · You may retry the conversation."):"Turn complete. Review authoritative state before executing.";
+    if(payload.action==="message")el("chat-input").value="";
+    await balances();await audit(false,true);
+  } catch(error){el("chat-status").textContent=error.message+" · Outcome may be uncertain. Use Resume original MCP call after reconnecting.";chatPending=true;}
+  finally{chatBusy=false;chatControls();}
+}
+el("chat-form").addEventListener("submit",event=>{event.preventDefault();chatTurn({message:el("chat-input").value});});
+el("chat-retry").addEventListener("click",()=>chatTurn({action:"retry"}));
+for(const button of document.querySelectorAll("[data-prompt]"))button.addEventListener("click",()=>{el("chat-input").value=button.dataset.prompt;el("chat-input").focus();});
+async function startChat(){try{const data=await request("GET","/chat/status",undefined,undefined,false);chatAvailable=data.available;el("chat-status").textContent=data.message;}catch(error){el("chat-status").textContent="AI chat unavailable. The manual lab remains available.";}chatControls();}
+startChat();

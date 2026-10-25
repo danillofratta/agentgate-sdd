@@ -18,6 +18,11 @@ foreach ($name in @('postgres_password', 'agent_token', 'approver_token', 'mcp_t
         [System.IO.File]::WriteAllText($secretPath, $token, (New-Object System.Text.UTF8Encoding($false)))
     }
 }
+ # Empty provider secret deliberately disables AI chat; never generate a fake API key.
+$llmKeyPath = Join-Path $secretDirectory 'llm_api_key'
+if (-not (Test-Path -LiteralPath $llmKeyPath)) {
+    [System.IO.File]::WriteAllText($llmKeyPath, '', (New-Object System.Text.UTF8Encoding($false)))
+}
 if ($SkipBuild) { docker compose up -d --wait } else { docker compose up -d --build --wait }
 if ($LASTEXITCODE -ne 0) { throw 'Docker startup failed. Check Docker Desktop and docker compose logs.' }
 Write-Output 'Frontend: http://127.0.0.1:8080'
