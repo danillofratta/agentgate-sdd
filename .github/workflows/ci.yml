@@ -89,6 +89,10 @@ jobs:
               path = root / name
               path.write_text(secrets.token_urlsafe(48), encoding='utf-8')
               os.chmod(path, 0o600)
+          # Optional LLM credential: no real provider in CI.
+          llm_key = root / 'llm_api_key'
+          llm_key.write_text('', encoding='utf-8')
+          os.chmod(llm_key, 0o600)              
           PY
           sudo chgrp 10001 .lab-secrets/*
           sudo chmod 0640 .lab-secrets/*
