@@ -101,7 +101,15 @@ def main() -> None:
         compose("up", "-d", "--wait", "postgres")
         compose("restart", "api")
         compose("up", "-d", "--wait")
+
+        # Refresh the browser session after service restarts.
+        session = client.get("/lab/session")
+        session.raise_for_status()
+        csrf = session.json()["csrf"]
+
+        # Verify durable replay after restart.
         assert request("POST", path + "/execute") == first
+
         replay = request(
             "POST",
             "/operations",
