@@ -184,14 +184,26 @@ account query and Swagger; the default API surface remains unchanged. `lab.py`
 bootstraps the separate browser proxy; `dependencies.py` remains its concrete
 gateway composition root. All routes stay in feature `endpoint.py` modules.
 
-There is no external MCP or LLM integration. Future inbound adapters would
-translate untrusted proposals to the same commands/queries after trusted
-authentication. They must not provide policy overrides, replacement approved
-arguments or direct tool/database access. A future outbound integration would
+Milestone B's `mcp.py` bootstraps a separate official-SDK Streamable HTTP server.
+Its feature-local `mcp_ingress/endpoint.py` exposes exactly three tools, performs
+strict transport-schema validation and delegates fixed HTTP calls through
+`McpApiGateway`. `LocalMcpApiGateway` holds only the AGENT token and calls the
+existing FastAPI endpoints; `dependencies.py` constructs it and its HTTP client.
+It has no approval method, persistence access or direct dispatch. There are no
+new business handlers or business rules: API CQRS handlers and the harness
+remain authoritative. `McpSecurity` authenticates the separate inbound token
+and rejects hostile/duplicate Host/Origin/authorization headers before the SDK.
+The SDK manages protocol compatibility and lifespan; PostgreSQL owns replay.
+All local MCP clients map to one synthetic agent, not independent OAuth users.
+See [MCP verification](milestone_b_verification.md).
+
+There is no LLM integration. Future inbound adapters must not provide policy
+overrides, replacement approved arguments or direct tool/database access.
+A future outbound integration would
 implement an application `Gateway` under infrastructure; persistence remains a
 domain `Repository`. Add an `EventPublisher` only for a real publishing use case.
 
 Remote side effects require a separately reviewed specification for external
 idempotency, cancellation, reconciliation and distributed failures. Local SQLite
 atomicity is not a production-grade distributed transaction. No remote service,
-SDK, framework or paid dependency is introduced here.
+paid service is required by the local MCP deployment.

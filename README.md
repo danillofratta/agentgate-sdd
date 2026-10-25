@@ -3,7 +3,8 @@
 AgentGate is a local, simulation-only reference project for controlling agent
 actions. It makes deterministic authorization, independent approval, bounded
 execution, idempotency and transactional audit observable in a small financial
-simulation, without paid services, financial credentials, an LLM or an MCP server.
+simulation, with a real local MCP server and without paid services, financial
+credentials or an LLM.
 
 **No real money moves.** Only `get_balance` and `simulate_transfer` operate on
 local seeded USD accounts. This is educational reference code, not a production
@@ -100,8 +101,15 @@ For the persistent PostgreSQL 16 browser lab, run
 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_lab.ps1`.
 Open <http://127.0.0.1:8080> and local Swagger at
 <http://127.0.0.1:8001/docs>. See the [interactive lab guide](docs/interactive_lab.md)
-for synthetic credentials, restart durability, integration tests and the A/B/C
-milestone boundary. The original SQLite setup below remains available.
+and MCP Streamable HTTP at <http://127.0.0.1:8002/mcp>. Run
+`uv run --locked python scripts/mcp_client.py list` to discover
+`request_operation`, `get_operation` and `execute_operation`. The client uses
+the independently generated local MCP credential; server-side AGENT credentials
+stay in the MCP container. Human approval remains a separate frontend/API action.
+This static local identity model is not production multi-user OAuth. See the
+[Milestone B evidence](docs/milestone_b_verification.md) and lab guide for client
+examples, transport security and durable replay. Milestone C is unimplemented.
+The original SQLite setup below remains available.
 
 Use PowerShell from the repository root. Generate two independent ephemeral
 tokens into the current environment; no default credential is provided or printed:
@@ -252,9 +260,9 @@ operation/approval/audit envelopes include `simulation: true`.
 
 ## Limitations and contributing
 
-No real money movement, external LLM/MCP integration, arbitrary tools, remote
+No real money movement, external LLM integration, arbitrary tools, remote
 identity service or production-grade distributed transactions are implemented.
-The runtime assumes one trusted local host and SQLite database. Credentials,
+The runtime assumes one trusted local host and one selected SQLite/PostgreSQL database. Credentials,
 host clock and database administrator are trusted; audit is neither tamper-proof
 nor externally witnessed. Two-second deadlines are cooperative, not hard
 real-time. At most two attempts share one deadline and one retry delay of at most

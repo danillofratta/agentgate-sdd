@@ -7,9 +7,9 @@ AgentGate's simulation safeguards are already executable, but exploring them req
 ## What Changes
 
 - Milestone A: PostgreSQL 16 adapters for all existing repository contracts and the Unit of Work, preserving SQLite and the existing HTTP/handler behavior; local Docker Compose, opt-in Swagger, a polished browser lab, credential-holding demo proxy, PowerShell startup, integration and smoke tests.
-- Milestone B (planning only now): authenticated MCP ingress for the same use cases, preserving explicit execution, ownership, policy, human approval, and replay.
+- Milestone B (current authorized implementation): official stable Python MCP SDK and a separate authenticated Streamable HTTP server calling the existing FastAPI API, preserving explicit execution, ownership, policy, human approval and replay; real SDK Docker verification and bounded transport security.
 - Milestone C (planning only now): an LLM proposal/chat interface using the MCP boundary, with no authorization authority, direct database access, or approval credentials.
-- Use exactly three implementation branches, one per milestone, under this single change. Implement A on the current branch; do not create branches, commit, push, or archive in this increment.
+- Keep one coherent deliverable and Pull Request per milestone under this single change. The current B authorization uses the existing branch; do not create branches, commit, push or archive. C remains separately authorized future work.
 - Explicitly supersede the earlier SQLite-only deployment restriction with one selected database per deployment. PostgreSQL network traffic is local persistence, not an external tool integration. Existing offline tests remain offline; opt-in integration tests target disposable local PostgreSQL only.
 
 ## Capabilities
@@ -18,7 +18,7 @@ AgentGate's simulation safeguards are already executable, but exploring them req
 
 - `postgresql-persistence`: durable transactional simulation with adapter parity, isolation, replay, concurrency, and recovery.
 - `interactive-lab`: loopback-only Docker environment, server-side synthetic credentials, browser workflow, local Swagger, and reproducible verification.
-- `mcp-ingress`: future authenticated MCP adapter for existing application use cases (B).
+- `mcp-ingress`: authenticated MCP-to-FastAPI adapter for existing application use cases (B).
 - `agent-chat`: future untrusted LLM proposals and chat through authorized MCP use cases (C).
 
 ### Modified Capabilities

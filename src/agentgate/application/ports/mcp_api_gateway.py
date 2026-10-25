@@ -1,0 +1,9 @@
+from typing import Any, Protocol
+
+
+class McpApiGateway(Protocol):
+    async def submit(self, payload: dict[str, Any], key: str) -> tuple[int, dict[str, Any]]: ...
+
+    async def inspect(self, operation_id: str) -> tuple[int, dict[str, Any]]: ...
+
+    async def run_operation(self, operation_id: str) -> tuple[int, dict[str, Any]]: ...

@@ -85,7 +85,7 @@ jobs:
           from pathlib import Path
           root = Path('.lab-secrets')
           root.mkdir(mode=0o700)
-          for name in ('postgres_password', 'agent_token', 'approver_token'):
+          for name in ('postgres_password', 'agent_token', 'approver_token', 'mcp_token'):
               path = root / name
               path.write_text(secrets.token_urlsafe(48), encoding='utf-8')
               os.chmod(path, 0o600)
@@ -96,6 +96,8 @@ jobs:
         run: docker compose up --build -d --wait
       - name: Docker workflow and restart smoke
         run: uv run --locked python scripts/smoke_lab.py
+      - name: Real MCP SDK workflow and restart smoke
+        run: uv run --locked python scripts/smoke_mcp.py
       - name: Stop test containers and retain data volumes
         if: always()
         run: |

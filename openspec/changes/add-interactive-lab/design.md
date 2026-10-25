@@ -21,6 +21,29 @@ Non-goals for A: MCP/LLM runtime, real financial or remote tool effects, product
 7. **Swagger.** Explicit local-development configuration enables /docs and /openapi.json; default remains disabled. Local Host validation protects enabled documentation; Compose's loopback binding provides the network boundary. No credential injection into Swagger.
 8. **B and C contracts.** B adds a separate authenticated MCP ingress adapter translating to existing use cases; agent tools never grant approval. C adds a server-side model gateway and chat slice translating untrusted suggestions through B. Provider configuration remains server-side; human approval remains outside the model tool set. Use fake transports/models for tests. No outbound integration is implemented during A.
 
+## Milestone B transport decisions
+
+Milestone B implementation authorization extends decision 8: use the official
+`mcp==2.3.0` SDK low-level Server callbacks, with strict Pydantic HTTP-boundary
+schemas and fixed sanitized validation errors. A separate `mcp.py` ASGI factory
+enters the SDK Streamable HTTP lifespan once, uses stateless JSON responses and
+closes its shared HTTP client. `dependencies.py` alone constructs the agent-only
+HTTP gateway. Calls go through the existing FastAPI API, never directly to CQRS
+handlers, repositories or tools. HTTP execution sends a truly empty body.
+
+Compose publishes MCP only at 127.0.0.1:8002; its service mounts independent MCP
+and agent secrets, with no approver/database credential or persistence network.
+Authentication and exact Host/Origin checks precede body buffering and the SDK;
+SDK DNS rebinding protection remains enabled. Request bodies are capped at 16
+KiB, HTTP waits are explicit, redirects/proxy inheritance are disabled, and no
+rejected raw arguments or exception details enter tool errors. All clients map
+to the existing local AGENT, with no multi-user OAuth claim. Approval stays in
+the independent existing human workflow. Real official-SDK Docker smoke covers
+initialization, discovery, modern negotiation, policy, human approval,
+concurrency, immutable PostgreSQL bindings and replay after API/MCP restart.
+Offline tests still forbid network/subprocess access. C remains unimplemented;
+this B increment creates no new branch, commit, push or archive.
+
 ## Risks / Trade-offs
 
 - Coarse writer serialization limits throughput → intentional for a two-account local lab; concurrency tests verify behavior and bounded contention.
@@ -32,4 +55,4 @@ Non-goals for A: MCP/LLM runtime, real financial or remote tool effects, product
 
 ## Migration Plan
 
-Validate the complete A/B/C artifacts first, then apply A on the current branch. Preserve SQLite as default and run its full regression suite. Initialize PostgreSQL only on explicit selected configuration; no automatic data copy. Build Compose, run integration and smoke tests, exercise all decisions and replay across container restart, then document verified results. Roll back deployment by stopping containers without deleting the data volume or secrets. Continue B and C only on separately authorized milestone branches under this change; do not create them now.
+Validate the complete A/B/C artifacts first, then apply A on the current branch. Preserve SQLite as default and run its full regression suite. Initialize PostgreSQL only on explicit selected configuration; no automatic data copy. Build Compose, run integration and smoke tests, exercise all decisions and replay across container restart, then document verified results. Roll back deployment by stopping containers without deleting the data volume or secrets. B is authorized on the current branch without creating branches, commits, pushes or archive. Continue C only after separate authorization under this change.

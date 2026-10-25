@@ -1,7 +1,9 @@
+import hmac
 import os
 from functools import partial
 from typing import Annotated, cast
 
+import httpx
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -25,6 +27,7 @@ from agentgate.features.request_operation.handler import (
 )
 from agentgate.infrastructure.gateways.local_credential_gateway import LocalCredentialGateway
 from agentgate.infrastructure.gateways.local_demo_api_gateway import LocalDemoApiGateway
+from agentgate.infrastructure.gateways.local_mcp_api_gateway import LocalMcpApiGateway
 from agentgate.infrastructure.gateways.local_tool_registry_gateway import LocalToolRegistryGateway
 from agentgate.infrastructure.persistence.database import initialize
 from agentgate.infrastructure.persistence.postgres_database import initialize as initialize_postgres
@@ -51,9 +54,31 @@ from agentgate.infrastructure.repositories.sqlite_operation_read_repository impo
 from agentgate.infrastructure.runtime.system_clock import SystemClock
 from agentgate.infrastructure.runtime.system_sleeper import SystemSleeper
 from agentgate.infrastructure.runtime.uuid_operation_id_generator import UuidOperationIdGenerator
-from agentgate.infrastructure.security.settings import Settings, secret
+from agentgate.infrastructure.security.settings import Settings, secret, validate_token
 from agentgate.infrastructure.tools.get_balance_adapter import GetBalanceAdapter
 from agentgate.infrastructure.tools.simulate_transfer_adapter import SimulateTransferAdapter
+
+
+def mcp_token() -> str:
+    if os.environ.get("AGENTGATE_MCP_ENABLED") != "1":
+        raise ValueError("AGENTGATE_MCP_ENABLED")
+    token = secret("AGENTGATE_MCP_TOKEN")
+    agent_token = secret("AGENTGATE_AGENT_TOKEN")
+    validate_token("AGENTGATE_MCP_TOKEN", token)
+    validate_token("AGENTGATE_AGENT_TOKEN", agent_token)
+    if hmac.compare_digest(token, agent_token):
+        raise ValueError("AGENTGATE_MCP_TOKEN")
+    return token
+
+
+def build_mcp_gateway() -> tuple[httpx.AsyncClient, LocalMcpApiGateway]:
+    client = httpx.AsyncClient(
+        base_url="http://api:8000",
+        timeout=httpx.Timeout(4, connect=1),
+        trust_env=False,
+        follow_redirects=False,
+    )
+    return client, LocalMcpApiGateway(client, secret("AGENTGATE_AGENT_TOKEN"))
 
 
 def build_components(settings: Settings | None = None) -> Components:

@@ -1,9 +1,9 @@
-# Interactive lab — Milestone A
+# Interactive lab — Milestones A and B
 
 This local simulation adds PostgreSQL and a browser to the authorization harness.
-No real funds, MCP runtime, LLM provider or external tools are involved. The one
-OpenSpec change `add-interactive-lab` plans A, B and C. Only A is implemented here;
-B and C require later authorization and their respective milestone branches.
+Milestone B adds a real authenticated MCP server calling the same FastAPI API.
+No real funds, LLM provider or external execution tools are involved. The single
+OpenSpec change `add-interactive-lab` tracks A, B and C; C remains unimplemented.
 
 ## Windows startup
 
@@ -17,15 +17,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_lab.ps1
 - Frontend: <http://127.0.0.1:8080>
 - Swagger: <http://127.0.0.1:8001/docs>
 - OpenAPI: <http://127.0.0.1:8001/openapi.json>
+- MCP Streamable HTTP: <http://127.0.0.1:8002/mcp>
 
 Port 8001 avoids an existing service on 8000; internal API traffic uses 8000.
-Keep 8080 and 8001 free. Build downloads images and packages; runtime tools are
-local. The API and frontend run as an unprivileged container user. Only their
+Keep 8080, 8001 and 8002 free. Build downloads images and packages; runtime tools are
+local. The API, frontend and MCP run as an unprivileged container user. Only their
 IPv4 loopback ports are published. PostgreSQL has no published port and uses an
 internal persistence network. The lab network permits Docker host forwarding;
 it exposes no generic outbound proxy or remote tools.
 
-The script generates three independent random secrets into ignored `.lab-secrets`
+The script generates four independent random secrets into ignored `.lab-secrets`
 files, restricts that directory to the current Windows identity and mounts the
 files read-only through Compose secrets. No token is printed, committed or
 embedded in images or browser assets. Retain these files with the data volume.
@@ -62,6 +63,69 @@ Origin checks, fetch metadata and session-bound CSRF prevent cross-site use.
 The proxy has only fixed API methods/destinations; browser identity, URL, policy
 or authorization overrides are never trusted. A future model must not receive
 these credentials or human approval controls as agent tools.
+
+## MCP server and official SDK client
+
+Compose's `mcp` service uses the official patched `mcp==2.3.0` Python SDK. It forwards
+fixed HTTP calls to `http://api:8000`; MCP has no persistence network, database
+credential, approval credential or direct tool dispatch capability. API health
+is a startup dependency. `/health` indicates that the MCP application/lifespan
+is ready; it does not promise that the upstream API remains available.
+
+| MCP tool | Arguments | Existing HTTP endpoint |
+| --- | --- | --- |
+| `request_operation` | `tool_name`, structured `arguments`, `idempotency_key` | `POST /operations` |
+| `get_operation` | `operation_id` | `GET /operations/{id}` |
+| `execute_operation` | `operation_id` | `POST /operations/{id}/execute`, empty body |
+
+`tool_name` is `get_balance` or `simulate_transfer`, with the same strict
+arguments as HTTP. Extra fields, role/principal overrides and replacement
+execution arguments are rejected. Submission never executes. Human approval
+uses the independent frontend/API workflow; it is absent from MCP discovery.
+Results contain `http_status` and the actual API operation fields (`id`, `state`,
+`decision`, `reason`, and result; inspection includes approval metadata).
+Tool failures set MCP `isError` and return a fixed sanitized error code.
+No application-level automatic retries occur after connection failures/timeouts;
+reuse the original key/ID to reconcile against the persisted API state.
+
+Inbound MCP uses `.lab-secrets/mcp_token`, independently generated from
+`.lab-secrets/agent_token`. Only the latter is used for upstream API calls.
+Clients never receive the upstream credential. All MCP clients share the same
+synthetic AgentGate agent identity, with its existing Alice source permission;
+this static local demo is **not a production multi-user OAuth authorization
+system**. It has no OAuth discovery or token delegation. Do not distribute the
+secret files or expose these services beyond the trusted local host.
+
+```powershell
+uv run --locked python scripts/mcp_client.py list
+uv run --locked python scripts/mcp_client.py request_operation '{"tool_name":"get_balance","arguments":{"account_id":"acct-alice"},"idempotency_key":"mcp-balance-demo"}'
+# Replace the UUID with the returned id; execution stays explicit:
+uv run --locked python scripts/mcp_client.py get_operation '{"operation_id":"00000000-0000-4000-8000-000000000001"}'
+uv run --locked python scripts/mcp_client.py execute_operation '{"operation_id":"00000000-0000-4000-8000-000000000001"}'
+```
+
+The client reads only the MCP credential, without printing it. The script uses
+the SDK v2 legacy compatibility mode to demonstrate a real initialization
+handshake over Streamable HTTP. Tests and smoke verification also exercise
+v2 automatic modern negotiation. No legacy SSE endpoint is exposed. The ASGI
+factory enters the SDK lifespan once and closes its shared HTTP client on
+shutdown. Stateless HTTP means sessions are not an authorization or replay
+store; PostgreSQL remains authoritative.
+
+Exact allowed Hosts are `127.0.0.1:8002`, `localhost:8002` and container-local
+`127.0.0.1:8000` (health check). Optional Origin must exactly match
+`http://127.0.0.1:8002` or `http://localhost:8002`; absent Origin supports native
+clients. Duplicate Host/Origin/Authorization and cross-site fetches are rejected.
+The SDK also has DNS rebinding protection enabled. Bodies are limited to 16 KiB,
+including streamed bytes. Internal HTTP has a one-second connect timeout and
+four-second connect/read/write/pool limits, no redirects and no environment
+proxy inheritance. These I/O limits do not change the harness's two-second
+execution budget. Access logging is disabled; rejected arguments, headers and
+exception details are not returned or logged by the adapter.
+
+MCP is opt-in via `AGENTGATE_MCP_ENABLED=1` in its separate container; the default
+API does not mount MCP. Re-running startup reuses all existing secrets and
+storage, adding only a missing MCP token for an existing A installation.
 
 ## Persistence and recovery
 
@@ -112,6 +176,7 @@ openspec validate --all --strict
 docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
 docker compose -f compose.test.yaml down
 uv run --locked python scripts/smoke_lab.py
+uv run --locked python scripts/smoke_mcp.py
 # Optional UI QA using installed Microsoft Edge:
 uv run --locked --with playwright==1.56.0 python scripts/browser_smoke.py
 ```
@@ -139,3 +204,12 @@ The locking design follows
 [PostgreSQL advisory locks](https://www.postgresql.org/docs/16/explicit-locking.html#ADVISORY-LOCKS)
 and [Psycopg transactions](https://www.psycopg.org/psycopg3/docs/basic/transactions.html).
 See [recorded verification](milestone_a_verification.md) for results and limits.
+See [Milestone B verification](milestone_b_verification.md) for MCP evidence.
+
+The MCP smoke uses the real SDK over host loopback, verifies PostgreSQL with
+read-only `docker compose exec ... psql` queries outside the MCP process, and
+restarts only API/MCP for durable replay. It creates operations and transfers
+20,100 synthetic cents per run; it never resets data. The separate human
+frontend workflow grants approval. Run it on a trusted local demo with enough
+Alice balance and no concurrent manual changes. Container logs and the client
+must never be configured to print secret headers or bodies.
