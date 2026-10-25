@@ -1,0 +1,69 @@
+name: agentgate-lab
+
+services:
+  postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: agentgate
+      POSTGRES_DB: agentgate
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U agentgate -d agentgate"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [persistence]
+
+  api:
+    build: .
+    environment:
+      AGENTGATE_POSTGRES_HOST: postgres
+      AGENTGATE_POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      AGENTGATE_AGENT_TOKEN_FILE: /run/secrets/agent_token
+      AGENTGATE_APPROVER_TOKEN_FILE: /run/secrets/approver_token
+      AGENTGATE_LOCAL_DEVELOPMENT: "1"
+      AGENTGATE_SEED: "1"
+    secrets: [postgres_password, agent_token, approver_token]
+    ports: ["127.0.0.1:8001:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, /app/.venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [persistence, lab]
+
+  frontend:
+    build: .
+    command: [/app/.venv/bin/uvicorn, "agentgate.lab:create_app", --factory, --host, "0.0.0.0", --port, "8080", --no-access-log]
+    environment:
+      AGENTGATE_LOCAL_DEVELOPMENT: "1"
+      AGENTGATE_AGENT_TOKEN_FILE: /run/secrets/agent_token
+      AGENTGATE_APPROVER_TOKEN_FILE: /run/secrets/approver_token
+    secrets: [agent_token, approver_token]
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, /app/.venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [lab]
+
+volumes:
+  postgres_data:
+
+networks:
+  persistence:
+    internal: true
+  lab: {}
+
+secrets:
+  postgres_password: {file: ./.lab-secrets/postgres_password}
+  agent_token: {file: ./.lab-secrets/agent_token}
+  approver_token: {file: ./.lab-secrets/approver_token}

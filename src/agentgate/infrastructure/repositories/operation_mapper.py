@@ -1,6 +1,6 @@
 import json
-import sqlite3
 from datetime import datetime
+from typing import Any
 
 from agentgate.application.exceptions.storage_unavailable import StorageUnavailable
 from agentgate.domain.entities.operation import Operation
@@ -20,14 +20,14 @@ from agentgate.domain.value_objects.tool import Tool
 from agentgate.domain.value_objects.transfer_arguments import TransferArguments
 
 
-def hydrate(row: sqlite3.Row, *, stored_state: bool = False) -> Operation:
+def hydrate(row: Any, *, stored_state: bool = False) -> Operation:
     try:
         return _hydrate(row, stored_state=stored_state)
     except (ValueError, TypeError, KeyError, IndexError):
         raise StorageUnavailable from None
 
 
-def _hydrate(row: sqlite3.Row, *, stored_state: bool) -> Operation:
+def _hydrate(row: Any, *, stored_state: bool) -> Operation:
     payload = json.loads(row["request_json"])
     args = payload["arguments"]
     tool = Tool(payload["tool"])

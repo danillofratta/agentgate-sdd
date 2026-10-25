@@ -13,11 +13,11 @@ from agentgate.domain.value_objects.operation_id import OperationId
 from agentgate.domain.value_objects.operation_state import OperationState
 from agentgate.domain.value_objects.principal_id import PrincipalId
 from agentgate.domain.value_objects.transfer_arguments import TransferArguments
+from agentgate.infrastructure.repositories.operation_inspection_mapper import _result
 from agentgate.infrastructure.repositories.operation_mapper import hydrate
 from agentgate.infrastructure.repositories.sqlite_approval_repository import (
     SqliteApprovalRepository,
 )
-from agentgate.infrastructure.repositories.sqlite_operation_read_repository import _result
 
 
 class SqliteOperationRepository:

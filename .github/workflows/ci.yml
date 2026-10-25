@@ -60,3 +60,44 @@ jobs:
 
       - name: OpenSpec strict validation
         run: openspec validate --all --strict
+
+  interactive-lab:
+    name: PostgreSQL integration and Docker smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.12.5"
+          python-version: "3.12.14"
+          enable-cache: false
+      - name: Install locked dependencies and generate ephemeral secrets
+        run: |
+          uv sync --locked --python 3.12
+          uv run --locked python - <<'PY'
+          import os
+          import secrets
+          from pathlib import Path
+          root = Path('.lab-secrets')
+          root.mkdir(mode=0o700)
+          for name in ('postgres_password', 'agent_token', 'approver_token'):
+              path = root / name
+              path.write_text(secrets.token_urlsafe(48), encoding='utf-8')
+              os.chmod(path, 0o600)
+          PY
+      - name: PostgreSQL integration tests
+        run: docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
+      - name: Start local lab
+        run: docker compose up --build -d --wait
+      - name: Docker workflow and restart smoke
+        run: uv run --locked python scripts/smoke_lab.py
+      - name: Stop test containers and retain data volumes
+        if: always()
+        run: |
+          docker compose -f compose.test.yaml down
+          docker compose down
