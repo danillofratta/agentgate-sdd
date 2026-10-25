@@ -96,6 +96,13 @@ configured outside this repository.
 
 ## Local setup
 
+For the persistent PostgreSQL 16 browser lab, run
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_lab.ps1`.
+Open <http://127.0.0.1:8080> and local Swagger at
+<http://127.0.0.1:8001/docs>. See the [interactive lab guide](docs/interactive_lab.md)
+for synthetic credentials, restart durability, integration tests and the A/B/C
+milestone boundary. The original SQLite setup below remains available.
+
 Use PowerShell from the repository root. Generate two independent ephemeral
 tokens into the current environment; no default credential is provided or printed:
 

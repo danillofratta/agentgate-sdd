@@ -3,6 +3,7 @@ from typing import TypeVar
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from agentgate.application.exceptions.forbidden import Forbidden
 from agentgate.application.exceptions.idempotency_conflict import IdempotencyConflict
@@ -17,10 +18,14 @@ from agentgate.transport.sanitized_errors import SanitizedErrors
 E = TypeVar("E", bound=Exception)
 
 
-def configure_http(application: FastAPI) -> None:
+def configure_http(application: FastAPI, *, local: bool = False) -> None:
     """Install shared transport safeguards without declaring feature endpoints."""
     application.add_middleware(BodyLimit)
     application.add_middleware(SanitizedErrors)
+    if local:
+        application.add_middleware(
+            TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "api"]
+        )
 
     def register_error(exception: type[E], code: str, status: int) -> None:
         async def sanitized_error(request: Request, exc: Exception) -> JSONResponse:

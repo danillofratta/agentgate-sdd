@@ -1,5 +1,9 @@
 # SQLite persistence and recovery
 
+The optional PostgreSQL 16 lab adapter, its transaction isolation, locking,
+durability and verification are described in [interactive lab](interactive_lab.md).
+The SQLite backend described below remains the default.
+
 AgentGate uses one SQLite database for commands and queries. CQRS separates
 responsibilities, not databases: there is no projection, replication pipeline,
 mediator, event bus, or event sourcing. Set `AGENTGATE_DATABASE` to the same path

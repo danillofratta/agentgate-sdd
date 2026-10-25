@@ -177,6 +177,13 @@ are reported truthfully. See [execution](execution_harness.md) and
 
 ## Future integrations
 
+Milestone A's optional PostgreSQL deployment and local browser adapters are
+described in [interactive lab](interactive_lab.md). One configured database still
+serves commands and queries. Local mode additionally registers the approver-only
+account query and Swagger; the default API surface remains unchanged. `lab.py`
+bootstraps the separate browser proxy; `dependencies.py` remains its concrete
+gateway composition root. All routes stay in feature `endpoint.py` modules.
+
 There is no external MCP or LLM integration. Future inbound adapters would
 translate untrusted proposals to the same commands/queries after trusted
 authentication. They must not provide policy overrides, replacement approved
