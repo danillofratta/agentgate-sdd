@@ -73,3 +73,26 @@ Deadlines cooperatively stop eligible uncommitted work; an entered commit/fsync
 can finish after the budget. No worker can later commit a rolled-back transfer.
 Arbitrary blocking or remote tools are unsupported. Future integrations require
 reviewed cancellation/idempotency/reconciliation and a new threat assessment.
+
+## Local MCP ingress (Milestone B)
+
+MCP is an inbound adapter to the existing authenticated FastAPI API. The official
+SDK serves Streamable HTTP on a separate loopback-only Compose port. A generated
+MCP token authenticates clients; a different server-side AGENT token authenticates
+fixed upstream HTTP calls. No approver/database secrets or persistence network
+are available to MCP. Only submission, owning-agent inspection and execution by
+ID are exposed. API handlers/harness retain all policy and approval authority.
+
+Exact Host/Origin allowlists, duplicate-header rejection, fetch metadata and SDK
+DNS rebinding protection address drive-by browser requests. Streamed 16 KiB body
+limits, bounded schemas, HTTP timeouts and sanitized envelope/tool errors limit
+input exposure and blocking. The adapter never logs rejected arguments, tokens
+or exception details. No automatic execution or upstream retries occur.
+
+All MCP clients represent one local synthetic agent. A stolen MCP token grants
+that agent's permitted API capabilities; it does not grant human approval or
+other principals' operations. Local processes and Docker administrators remain
+trusted. The independent human browser workflow is a single-user teaching
+boundary, not proof of human presence or production login. OAuth, multiple-user
+isolation, TLS, token rotation, rate limits and production availability remain
+outside this milestone. See [verification](milestone_b_verification.md).

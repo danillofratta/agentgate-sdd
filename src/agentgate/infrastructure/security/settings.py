@@ -16,6 +16,17 @@ def secret(name: str) -> str:
     return os.environ.get(name, "")
 
 
+def validate_token(name: str, token: str) -> None:
+    if (
+        not re.fullmatch("[A-Za-z0-9_-]{32,512}", token)
+        or len(set(token)) < 8
+        or any(
+            marker in token.lower() for marker in ("sample", "example", "change-me", "placeholder")
+        )
+    ):
+        raise ValueError(name)
+
+
 @dataclass(frozen=True)
 class Settings:
     agent_token: str = field(repr=False)
@@ -27,15 +38,7 @@ class Settings:
             ("AGENTGATE_AGENT_TOKEN", self.agent_token),
             ("AGENTGATE_APPROVER_TOKEN", self.approver_token),
         ):
-            if (
-                not re.fullmatch("[A-Za-z0-9_-]{32,512}", token)
-                or len(set(token)) < 8
-                or any(
-                    marker in token.lower()
-                    for marker in ("sample", "example", "change-me", "placeholder")
-                )
-            ):
-                raise ValueError(name)
+            validate_token(name, token)
         if hmac.compare_digest(self.agent_token, self.approver_token):
             raise ValueError("AGENTGATE_APPROVER_TOKEN")
         if not self.database or self.database == ":memory:":

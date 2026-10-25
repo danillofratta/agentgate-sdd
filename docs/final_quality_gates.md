@@ -1,5 +1,9 @@
 # Final quality gates — task 7.1
 
+This historical core report is retained. Current MCP/Milestone B results,
+including 982 offline tests and real Docker interoperability, are recorded in
+[Milestone B verification](milestone_b_verification.md).
+
 Verification date: 2026-10-24 (America/Sao_Paulo).
 
 **Result: passed.** A fresh rebuild of committed HEAD produced **924 passed,

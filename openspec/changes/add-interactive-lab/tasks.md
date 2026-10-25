@@ -1,6 +1,6 @@
 # Tasks
 
-One change, three milestone implementation branches. A uses the current branch. B and C each use one later branch only when separately authorized. No per-task branches, commits, pushes or archive in this session.
+One change, three milestone deliverables. B is now authorized on the current branch, with no new branches, commits, pushes or archive. C requires separate authorization. One Pull Request per milestone.
 
 ## 1. Milestone A — Persistent interactive local lab
 
@@ -10,10 +10,10 @@ One change, three milestone implementation branches. A uses the current branch. 
 - [x] 1.4 Deliver Docker Compose with persistent PostgreSQL 16, health checks, loopback-only ports, generated file secrets and one-command Windows startup. Verify Docker smoke workflow and API/database restart persistence; document startup, URLs, recovery and stop without data deletion.
 - [x] 1.5 Run all 925 existing regressions plus new tests, PostgreSQL integration and Docker smoke tests, locked dependency sync, Ruff check/format, strict Mypy and strict OpenSpec validation. Record concrete results, demonstrated business workflow and remaining limitations; stop after A.
 
-## 2. Milestone B — MCP integration (future implementation)
+## 2. Milestone B — MCP server integration
 
-- [ ] 2.1 Implement opt-in authenticated MCP ingress translating bounded typed requests into existing submission, inspection and explicit execution use cases. Verify fake-transport contracts, principal isolation, policy parity, invalid arguments and idempotent replay; document local startup and protocol surface on the single B branch.
-- [ ] 2.2 Verify agents cannot approve, override policy, access repositories or dispatch tools directly; cover independent human approval, failure sanitization and PostgreSQL concurrency through MCP. Run A regressions and update security/architecture documentation before completing B.
+- [x] 2.1 Implement the official pinned stable MCP Python SDK with Streamable HTTP at loopback port 8002, explicit SDK lifespan, distinct inbound credential and server-side AGENT API credential. Expose exactly request_operation, get_operation and execute_operation through the existing FastAPI HTTP API; enforce bounded strict schemas, exact Host/Origin allowlists, DNS rebinding protection, timeouts and sanitized errors. Extend Compose and existing startup with persistent storage, generated secret, API dependency and MCP readiness; document endpoint, real SDK client and local identity limits.
+- [x] 2.2 Verify real MCP initialization, discovery and invocation, policy parity, ownership, invalid inputs, idempotency, human-only approval, immutable bindings, concurrent PostgreSQL execution, one financial effect and durable replay after MCP/API restart. Add offline protocol/transport and failure/security tests, run all A regressions and quality gates plus real Docker client verification, and record evidence in docs/milestone_b_verification.md. Preserve frontend, Swagger and all financial guarantees; stop before C.
 
 ## 3. Milestone C — LLM agent and chat (future implementation)
 
@@ -22,5 +22,5 @@ One change, three milestone implementation branches. A uses the current branch. 
 
 ## Workflow follow-up
 
-- Review the coherent A deliverable without creating another branch or committing/pushing.
-- Implement B and C only after separate authorization. Archive only on a separate explicit request.
+- Review the coherent A/B deliverables without creating another branch or committing/pushing.
+- Implement C only after separate authorization. Archive only on a separate explicit request.
