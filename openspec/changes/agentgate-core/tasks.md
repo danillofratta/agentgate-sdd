@@ -52,5 +52,5 @@ These are future implementation tasks. No task is completed by this planning cha
 
 ## 7. Final integration acceptance
 
-- [ ] 7.1 In a clean environment run `python -m pytest`, `python -m ruff check .`, `python -m ruff format --check .`, `python -m mypy --strict src`, and `openspec validate --all --strict`; verify all pass with no runtime network access and CI uses equivalent commands.
+- [x] 7.1 In a clean environment run `python -m pytest`, `python -m ruff check .`, `python -m ruff format --check .`, `python -m mypy --strict src`, and `openspec validate --all --strict`; verify all pass with no runtime network access and CI uses equivalent commands.
 - [ ] 7.2 Run the documented fresh-database demo through denial, approval, execution, duplicate replay, read-only operation/audit inspection, and service restart; verify exactly one intended transfer, preserved total funds, durable correlated audit records, no writes from queries, and all architecture gates passing, then record acceptance results for review.
