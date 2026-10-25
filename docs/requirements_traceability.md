@@ -55,7 +55,7 @@ Specs: [development-harness](../openspec/changes/agentgate-core/specs/developmen
 | EC01 | Local-only execution | `tests/infrastructure/test_request_storage.py::test_network_and_subprocess_guards`; `tests/api/test_full_api_integration.py::test_balance_execution_and_inspection`; `tests/api/test_full_api_integration.py::test_transfer_full_lifecycle_replay_restart_and_funds[10001]`; all tests use the autouse offline fixture |
 | EC02 | Request approval and inspection cannot dispatch | `tests/api/test_request_endpoint.py::test_endpoint_decisions_and_no_transfer[10001-REQUIRE_APPROVAL-PENDING_APPROVAL]`; `tests/application/test_approve_operation_handler.py::test_fake_ports_decide_without_accounts_or_tools[APPROVE]`; `tests/api/test_full_api_integration.py::test_queries_are_read_only_even_after_expiry_and_audit_is_paginated`; D3 dispatch placement gate |
 | EC03 | Repeated reads preserve state | `tests/api/test_full_api_integration.py::test_queries_are_read_only_even_after_expiry_and_audit_is_paginated` |
-| EC04 | Concurrent identical requests | `tests/infrastructure/test_request_storage.py::test_concurrent_submissions_have_one_atomic_record`; `tests/infrastructure/test_concurrent_execution_recovery.py::test_same_operation_concurrently_commits_one_transfer[False]`; `tests/infrastructure/test_concurrent_execution_recovery.py::test_same_operation_concurrently_commits_one_transfer[True]` (creation and execution races tested separately; see limitations) |
+| EC04 | Concurrent identical requests | `tests/infrastructure/test_request_storage.py::test_concurrent_submissions_have_one_atomic_record`; `tests/infrastructure/test_concurrent_execution_recovery.py::test_same_operation_concurrently_commits_one_transfer[False]`; `tests/infrastructure/test_concurrent_execution_recovery.py::test_same_operation_concurrently_commits_one_transfer[True]`; `tests/infrastructure/test_overlapping_submission_execution.py::test_submission_overlaps_execution_and_both_callers_replay_one_transfer` (one controlled combined interleaving; see limitations) |
 | EC05 | Conflict restart and principal isolation | `tests/api/test_request_endpoint.py::test_endpoint_idempotency_json_order_and_conflict`; `tests/api/test_full_api_integration.py::test_transfer_full_lifecycle_replay_restart_and_funds[10001]`; `tests/infrastructure/test_request_storage.py::test_principal_scoped_keys`; `tests/api/test_full_api_integration.py::test_identity_ownership_missing_and_invalid_ids` |
 | EC06 | State changes after authorization | `tests/infrastructure/test_secure_transfer_execution.py::test_current_sqlite_facts_deny_without_approval_consumption[funds]`; `tests/infrastructure/test_secure_transfer_execution.py::test_current_sqlite_facts_deny_without_approval_consumption[tools]`; `tests/application/test_secure_transfer_handler.py::test_fresh_principal_and_policy_are_loaded_inside_transaction` |
 | EC07 | Pending and terminal execution | `tests/api/test_full_api_integration.py::test_nonexecutable_lifecycles_never_dispatch[pending]`; `tests/api/test_full_api_integration.py::test_transfer_full_lifecycle_replay_restart_and_funds[10001]` |
@@ -74,7 +74,8 @@ Specs: [development-harness](../openspec/changes/agentgate-core/specs/developmen
 in a fresh checkout with the documented interpreter/tool versions. Expect every
 command to exit zero. `uv sync --locked` must leave the lockfile unchanged.
 This release-doc verification used the existing local locked environment; it
-does not claim a clean-machine or hosted CI run (task 7.1 remains pending).
+does not claim a clean-machine or hosted CI run. Subsequent task 7.1 evidence is
+recorded in [final quality gates](final_quality_gates.md).
 
 **D2 — CI configuration and failure propagation.** Inspect
 [ci.yml](../.github/workflows/ci.yml): push/PR on main, read-only permissions,
@@ -129,7 +130,8 @@ in order on a fresh database. Expect the three decisions, one grant, one actual
 simulated transfer of 10,001 cents, unchanged result on duplicate execution and
 submission, one success event and balances 989,999 / 1,010,001 (total 2,000,000).
 Expected conflict/forbidden examples are explained after the executable blocks.
-This checks documentation commands, not final restart acceptance (task 7.2).
+Final real HTTP/process restart acceptance is now recorded in
+[task 7.2 acceptance](final_e2e_acceptance.md), with an executable runner.
 
 ## Coverage limits and verification record
 
@@ -137,14 +139,16 @@ All 42 scenarios are enumerated: 13 development, 14 authorization and 15 executi
 None is unmapped. Documentation checks are allowed scenario evidence, not a
 claim that every scenario has one comprehensive automated test. In particular:
 
-- Concurrent identical creation and concurrent execution are separate tests;
-  there is no single synchronized submit-then-execute race test mapped here.
-- Restart evidence uses closed/reopened connections and reconstructed components;
-  it does not demonstrate abrupt OS process termination or power-loss durability.
-- Lifecycle audit/approver identity is verified by complementary tests; there is
-  no single test asserting the entire remote HTTP walkthrough after process restart.
-- Clean-machine acceptance, hosted CI failure behavior, later Python versions
-  and final restarted manual demo remain unverified here. Tasks 7.1/7.2 stay open.
+- Separate creation/execution races are complemented by one Event-controlled
+  overlapping submission/execution pipeline. The second submission's SQLite
+  entry is gated until execution commits; it does not test every combined schedule
+  or simultaneous BEGIN contention. See the task 7.2 report for the exact scope.
+- Automated restart tests reopen connections/components. The standalone task 7.2
+  runner additionally verifies graceful OS process exit, a different Uvicorn PID,
+  real loopback HTTP and preserved approval/result/audit. Abrupt process termination
+  and power-loss durability are not established by that acceptance run.
+- Task 7.1 records clean-environment gates; task 7.2 records the final restarted
+  demo. Hosted CI failure behavior and later Python versions remain unverified.
 - Sentinel coverage is not an application-owned structured logging pipeline,
   production distributed-transaction proof or comprehensive security certification.
 
