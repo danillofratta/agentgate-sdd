@@ -1,4 +1,5 @@
 import secrets
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -17,7 +18,8 @@ from tests.conftest import AGENT_TOKEN, APPROVER_TOKEN
 
 
 @pytest.fixture
-def local_api(settings):
+def local_api(settings, monkeypatch, clock):
+    monkeypatch.setattr("agentgate.dependencies.SystemClock", lambda: clock)
     with TestClient(
         create_app(build_components(settings), local=True), base_url="http://127.0.0.1:8000"
     ) as api:
@@ -88,7 +90,9 @@ def payload(amount=20000):
 def test_lab_full_workflow_and_secret_isolation(lab):
     h = headers(lab)
     assets = "".join(lab.get(path).text for path in ["/", "/app.js", "/style.css"])
-    assert "Every action has a gate" in assets
+    assert "Your workspace, at a glance" in assets
+    assert assets.count('id="operation-workspace"') == 1
+    assert '<details id="inspector" class="panel inspector">' in assets
     assert lab.get("/").headers["cache-control"] == "no-store"
     assert "frame-ancestors 'none'" in lab.get("/").headers["content-security-policy"]
     before = lab.get("/lab/accounts").json()
@@ -130,6 +134,85 @@ def test_csrf_is_session_bound(lab):
     h = headers(lab)
     lab.get("/lab/session")
     assert lab.post("/lab/operations", json=payload(), headers=h).status_code == 403
+
+
+def test_original_idempotency_survives_repeated_csrf_renewal_and_reconciliation(lab):
+    original = headers(lab)
+    intent = payload(10001)
+    before = lab.get("/lab/accounts").json()
+    # The server committed this response, but the browser may not have received it.
+    created = lab.post("/lab/operations", json=intent, headers=original).json()
+    current_headers = original
+    for _ in range(3):
+        renewed = headers(lab)
+        rejected = lab.post("/lab/operations", json=intent, headers=current_headers)
+        assert rejected.status_code == 403
+        assert rejected.json() == {"error": "LAB_FORBIDDEN"}
+        reconciled = lab.post("/lab/operations", json=intent, headers=renewed)
+        assert reconciled.status_code == 200
+        assert reconciled.json()["id"] == created["id"]
+        current_headers = renewed
+    assert lab.get("/lab/accounts").json() == before
+    events = lab.get("/lab/audit").json()["events"]
+    assert len(events) == 1 and events[0]["event_type"] == "OPERATION_REQUESTED"
+    path = "/lab/operations/" + created["id"]
+    lab.post(path + "/approval", json={"decision": "APPROVE"}, headers=current_headers)
+    assert lab.get("/lab/accounts").json() == before
+    first = lab.post(path + "/execute", headers=current_headers).json()
+    after = lab.get("/lab/accounts").json()
+    assert first["state"] == "SUCCEEDED"
+    renewed = headers(lab)
+    assert lab.get(path).json()["state"] == "SUCCEEDED"
+    assert lab.post(path + "/execute", headers=renewed).json() == first
+    assert lab.get("/lab/accounts").json() == after
+    assert after[0]["balance_cents"] == before[0]["balance_cents"] - 10001
+    assert after[1]["balance_cents"] == before[1]["balance_cents"] + 10001
+    events = lab.get("/lab/audit").json()["events"]
+    assert sum(e["event_type"] == "OPERATION_EXECUTED" for e in events) == 1
+
+
+def test_renewed_session_preserves_approved_operation_without_execution(lab):
+    original_headers = headers(lab)
+    before = lab.get("/lab/accounts").json()
+    submitted = lab.post("/lab/operations", json=payload(10001), headers=original_headers).json()
+    path = "/lab/operations/" + submitted["id"]
+    assert lab.get(path).json()["approval"]["state"] == "PENDING"
+    assert lab.get("/lab/accounts").json() == before
+    renewed = headers(lab)
+    assert (
+        lab.post(path + "/approval", json={"decision": "APPROVE"}, headers=original_headers)
+    ).status_code == 403
+    assert lab.get(path).json()["state"] == "PENDING_APPROVAL"
+    lab.post(path + "/approval", json={"decision": "APPROVE"}, headers=renewed).raise_for_status()
+    restored = lab.get(path).json()
+    assert restored["state"] == "READY"
+    assert restored["approval"]["state"] == "GRANTED"
+    assert restored["decision"] == "REQUIRE_APPROVAL"
+    assert lab.get("/lab/accounts").json() == before
+    first = lab.post(path + "/execute", headers=renewed).json()
+    after = lab.get("/lab/accounts").json()
+    assert first["state"] == "SUCCEEDED"
+    assert lab.post(path + "/execute", headers=renewed).json() == first
+    assert lab.get("/lab/accounts").json() == after
+    assert after[0]["balance_cents"] == before[0]["balance_cents"] - 10001
+
+
+@pytest.mark.parametrize("approve_first", [False, True])
+def test_elapsed_approval_cannot_be_reused_and_reads_do_not_expire(lab, clock, approve_first):
+    h = headers(lab)
+    before = lab.get("/lab/accounts").json()
+    submitted = lab.post("/lab/operations", json=payload(10001), headers=h).json()
+    path = "/lab/operations/" + submitted["id"]
+    if approve_first:
+        lab.post(path + "/approval", json={"decision": "APPROVE"}, headers=h).raise_for_status()
+    clock.value += timedelta(seconds=301)
+    snapshot = lab.get(path).json()
+    assert snapshot["state"] == ("READY" if approve_first else "PENDING_APPROVAL")
+    assert snapshot["approval"]["state"] == ("GRANTED" if approve_first else "PENDING")
+    assert lab.post(path + "/execute", headers=h).status_code == 409
+    # The rejected command rolls back; expiry is not invented by inspection.
+    assert lab.get(path).json()["state"] == snapshot["state"]
+    assert lab.get("/lab/accounts").json() == before
 
 
 @pytest.mark.parametrize(

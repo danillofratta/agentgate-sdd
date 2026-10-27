@@ -6,10 +6,12 @@ import httpx2
 import pytest
 
 from agentgate.application.exceptions.agent_unavailable import AgentUnavailable
+from agentgate.features.chat_turn.command import ChatTurnCommand
 from agentgate.infrastructure.gateways.openai_chat_gateway import OpenaiChatGateway
 from agentgate.infrastructure.gateways.sdk_agent_mcp_gateway import SdkAgentMcpGateway
 from agentgate.infrastructure.security.llm_settings import LlmSettings
 from tests.agent_support import tool_call
+from tests.application.test_agent_safety import FakeMcp, handler
 
 KEY = "test-only-provider-secret-never-valid"
 
@@ -59,6 +61,81 @@ def test_actual_provider_wire_contract_and_capability_probe(provider_http, provi
     assert seen[0]["parallel_tool_calls"] is False
     assert seen[0]["max_completion_tokens"] == 512
     assert KEY not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "message,name,arguments,business_tool",
+    [
+        (
+            "What is Alice's balance?",
+            "request_balance",
+            {"account_id": "acct-alice"},
+            "get_balance",
+        ),
+        (
+            "Transfer $1 from Alice to Bob.",
+            "request_transfer",
+            {
+                "source_account_id": "acct-alice",
+                "destination_account_id": "acct-bob",
+                "amount_cents": 100,
+                "currency": "USD",
+            },
+            "simulate_transfer",
+        ),
+    ],
+)
+def test_groq_natural_language_flat_tools_on_wire(
+    provider_http, message, name, arguments, business_tool
+):
+    seen = []
+
+    def respond(request):
+        payload = json.loads(request.content)
+        assert request.url == "https://api.groq.com/openai/v1/chat/completions"
+        assert "disable_tool_validation" not in payload
+        seen.append(payload)
+        if len(seen) == 1:
+            response = tool_call("capability_probe", {})
+        elif len(seen) == 2:
+            tools = {t["function"]["name"]: t["function"]["parameters"] for t in payload["tools"]}
+            assert "request_operation" not in tools
+            assert set(tools[name]["properties"]) == set(arguments)
+            assert all(p["type"] != "object" for p in tools[name]["properties"].values())
+            assert payload["messages"][-1]["content"] == message
+            response = tool_call(name, arguments)
+        else:
+            assert payload["messages"][-2]["tool_calls"][0]["function"]["name"] == name
+            response = {"content": "Inspect the authoritative card.", "tool_calls": []}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls" if len(seen) < 3 else "stop",
+                        "message": response,
+                    }
+                ]
+            },
+        )
+
+    provider_http(respond)
+
+    async def run():
+        mcp = FakeMcp()
+        mcp.body.update(tool=business_tool, arguments=arguments)
+        result = await handler(OpenaiChatGateway(settings("groq")), mcp).handle(
+            ChatTurnCommand("one", message)
+        )
+        assert result.error is None
+        assert len(mcp.calls) == 1
+        assert mcp.calls[0][0] == "request_operation"
+        assert mcp.calls[0][1]["tool_name"] == business_tool
+        assert mcp.calls[0][1]["arguments"] == arguments
+        assert isinstance(mcp.calls[0][1]["arguments"], dict)
+
+    asyncio.run(run())
+    assert len(seen) == 3
 
 
 @pytest.mark.parametrize(

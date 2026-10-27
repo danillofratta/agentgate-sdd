@@ -30,14 +30,43 @@ def definitions(discovered: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ):
             raise ValueError("MCP_TOOLS_INVALID")
         if name == "request_operation":
-            del schema["properties"]["idempotency_key"]
-            schema["required"] = [key for key in schema["required"] if key != "idempotency_key"]
+            account = {"type": "string", "pattern": "^acct-[a-z0-9]{1,32}$"}
+            for alias, properties in (
+                ("request_balance", {"account_id": account}),
+                (
+                    "request_transfer",
+                    {
+                        "source_account_id": account,
+                        "destination_account_id": account,
+                        "amount_cents": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+                        "currency": {"type": "string", "enum": ["USD"]},
+                    },
+                ),
+            ):
+                result.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": alias,
+                            "description": (
+                                "Propose a balance read. Never executes."
+                                if alias == "request_balance"
+                                else "Propose a simulated transfer in integer cents. "
+                                "Never executes; "
+                                "requires explicit UI execution and independent approval if needed."
+                            ),
+                            "parameters": {
+                                "type": "object",
+                                "properties": copy.deepcopy(properties),
+                                "required": list(properties),
+                                "additionalProperties": False,
+                            },
+                        },
+                    }
+                )
+            continue
         # Names and descriptions are trusted locally; discovered descriptions are untrusted.
         description = {
-            "request_operation": (
-                "Propose get_balance or simulate_transfer. "
-                "Backend supplies the stable idempotency key. Never executes."
-            ),
             "get_operation": "Inspect an operation already returned in this conversation.",
             "execute_operation": (
                 "Execute a balance read, or a transfer after the explicit UI execute action "
@@ -51,6 +80,18 @@ def definitions(discovered: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return result
+
+
+def llm_arguments(name: str, raw: Any) -> tuple[str, dict[str, Any]]:
+    """Translate flat model tools into validated MCP payloads without coercion."""
+    proposals = {"request_balance": "get_balance", "request_transfer": "simulate_transfer"}
+    if name in proposals:
+        return "request_operation", arguments(
+            "request_operation", {"tool_name": proposals[name], "arguments": raw}
+        )
+    if name not in {"get_operation", "execute_operation"}:
+        raise ValueError("INVALID_TOOL_CALL")
+    return name, arguments(name, raw)
 
 
 def arguments(name: str, raw: Any) -> dict[str, Any]:

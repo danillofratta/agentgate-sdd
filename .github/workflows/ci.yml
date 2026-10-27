@@ -49,6 +49,9 @@ jobs:
       - name: Pytest (including architecture tests)
         run: uv run --locked python -m pytest -q
 
+      - name: Offline frontend behavior
+        run: node --test tests/frontend/console.test.cjs
+
       - name: Ruff lint
         run: uv run --locked python -m ruff check .
 

@@ -54,20 +54,17 @@ class VerificationLlm:
             return call("get_operation", {"operation_id": snapshots[-1]["id"]})
         if "balance" in user.lower():
             return call(
-                "request_operation",
-                {"tool_name": "get_balance", "arguments": {"account_id": "acct-alice"}},
+                "request_balance",
+                {"account_id": "acct-alice"},
             )
         amount = 100001 if "$1,000.01" in user else 10001 if "$100.01" in user else 100
         return call(
-            "request_operation",
+            "request_transfer",
             {
-                "tool_name": "simulate_transfer",
-                "arguments": {
-                    "source_account_id": "acct-alice",
-                    "destination_account_id": "acct-bob",
-                    "amount_cents": amount,
-                    "currency": "USD",
-                },
+                "source_account_id": "acct-alice",
+                "destination_account_id": "acct-bob",
+                "amount_cents": amount,
+                "currency": "USD",
             },
         )
 
