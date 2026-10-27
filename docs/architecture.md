@@ -208,20 +208,33 @@ tools, policy rules or repositories.
 
 ```mermaid
 flowchart LR
-    Browser[Local browser + session CSRF] --> Chat[Chat command handler]
+    Browser[Local browser + session CSRF] --> Lab[Demo Lab proxy and Chat API]
+    Lab --> Chat[Chat command handler]
     Chat --> LLM[Configured provider gateway]
     LLM --> Untrusted[Untrusted tool suggestions]
     Untrusted --> Chat
     Chat --> Client[Official MCP SDK client]
     Client --> MCP[Authenticated MCP server]
-    MCP --> API[Existing FastAPI + harness]
-    API --> DB[(PostgreSQL)]
+    MCP --> API[FastAPI feature endpoints]
+    Lab --> Manual[Manual request / inspect / execute]
+    Manual --> API
     Browser --> Human[Explicit independent human controls]
-    Human --> API
+    Human --> Approver[Lab proxy with separate approver credential]
+    Approver --> API
+    API --> App[Application handlers]
+    App --> Domain[Domain authorization and approval]
+    App --> Harness[Execute-operation Runtime Harness]
+    Harness --> Tools[Registered local simulation adapters]
+    App --> Persistence[Repository contracts and Unit of Work]
+    Harness --> Persistence
+    Tools --> Persistence
+    Persistence --> DB[(PostgreSQL Lab / SQLite alternative)]
 ```
 
-Model suggestions are validated against a fixed three-tool allowlist and domain
-values. Submission keys belong to the backend. A pending mutation retains its
+The MCP server exposes three tools. Model-facing definitions project submission
+into `request_balance` and `request_transfer`, alongside `get_operation` and
+`execute_operation`: four validated model functions map to the three unchanged
+MCP schemas. Submission keys belong to the backend. A pending mutation retains its
 exact key/arguments across timeout/cancellation and explicit recovery. A transfer
 execute command grants only one invocation for that exact known ID; user text
 cannot create this grant or satisfy business approval. Balance reads may execute

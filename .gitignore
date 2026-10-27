@@ -12,3 +12,4 @@ dist/
 .env
 .lab-secrets/
 .lab-artifacts/
+/ci-error.txt

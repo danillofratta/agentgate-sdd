@@ -1,5 +1,22 @@
 # Guided console: verification and acceptance
 
+## Portfolio verification follow-up — 2026-10-27
+
+The historical implementation-session record below remains for attribution.
+Current-source Edge QA now verifies all five prompts with the explicit test LLM
+and real MCP/API/PostgreSQL, separate review/execution/replay, one shared operation
+panel, completed-ID reload, Escape/focus restoration, widths 1440/820/390 without
+horizontal overflow and no JavaScript errors. Real current screenshots are in
+[media](media/README.md); [C verification](milestone_c_verification.md) describes
+the temporary read-only source mount and restoration of the default frontend.
+
+This focused pass does not complete every item in the manual checklist below:
+200% zoom, reduced motion, complete Tab/Enter/focus trapping and screen-reader
+review, plus live injected transport/storage failures remain unverified in a
+real browser. Their deterministic frontend regressions pass. The existing
+optional browser script failed a hidden-reference assertion against an older
+image; its entire run is not claimed as passing. No production behavior changed.
+
 ## What changed
 
 The former lab exposed raw cents, repeated chat operation cards, a second manual
