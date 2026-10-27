@@ -37,27 +37,49 @@ credentials; use the browser lab for the credential-free demonstration.
 `AGENTGATE_LOCAL_DEVELOPMENT=1` explicitly enables Swagger and `/accounts`;
 the default API surface remains unchanged and documentation stays disabled.
 
-## Demonstrate business behavior
+## Guided operations console
 
-1. Observe Alice and Bob balances ($10,000 each on first startup).
-2. Select `$1 · Allow`, submit, then Execute. Replay returns the stored result
-   without another transfer.
-3. Select `$200 · Approval`, submit and observe `REQUIRE_APPROVAL` and
-   `PENDING_APPROVAL`. Human Approve grants the exact operation; Execute returns
-   `SUCCEEDED` with effective `ALLOW / HUMAN_APPROVED`. Original policy stays
-   `REQUIRE_APPROVAL`.
-4. Submit another pending operation with a new key and Reject. State becomes
-   `REJECTED`; execution is blocked and balances stay unchanged.
-5. Select `$1,000.01 · Deny`; observe DENY and unchanged balances.
-6. Inspect status, approval expiry, paginated audit timeline and the HTTP
-   inspector. It shows the last action's request/status/body, excluding bearer
-   headers and CSRF values. Uncheck Current operation to see other records.
-7. Reuse the same key and intent to replay submission. Changed arguments under
-   the same key return 409. Generate new creates a fresh intent. Resume an
-   operation by ID after restarting.
-8. `get_balance` is a separately submitted and executed local tool. Balance
-   cards use the approver-only read-only query, adding no audit/operation noise.
-   Agent source permissions remain Alice-only. Approval expires in 300 seconds.
+The redesign is tracked separately in `redesign-interactive-lab-ux`; the existing
+`add-interactive-lab` change remains unchanged. Dashboard shows balances and recent
+resume links. AI Assistant and Operations share one authoritative operation panel.
+Developer Inspector is collapsed by default, with sanitized HTTP/MCP/audit evidence.
+
+1. Choose **Ask the assistant** or **Create manually**. Manual amounts use USD,
+   converted exactly to integer cents. A submitted request remains immutable.
+2. Propose **$1 · Allowed**. Status is **Authorized — not executed**. Choose
+   **Execute operation** explicitly, then **Replay safely** to retrieve its stored
+   result without another debit. Inspect current balances on Dashboard.
+3. Choose **New operation**, propose **$100.01 · Needs approval**, then **Review
+   request**. Review the exact amount, accounts, original policy and deadline as
+   the separate synthetic human. Check the confirmation and **Confirm approval**.
+   Status becomes **Approved — awaiting execution**; balances remain unchanged.
+   Choose **Execute approved transfer** separately.
+4. Reject another request in the review dialog. Propose **$1,000.01 · Denied**.
+   Neither offers execution. Presets remain subject to available funds/permissions.
+5. Expand **Audit timeline**, page through evidence and open **Developer Inspector**
+   when needed. Original policy remains unchanged after human approval/execution.
+6. Navigate between Assistant and Operations, then reload or resume by saved ID.
+   Recent rows cover this browser and loaded audit pages, not a complete global list.
+7. On uncertain manual submission, **Reconcile original request** explicitly reuses
+   the retained key/payload, including after reload. No financial action retries
+   automatically. The recovery banner stays available in every view. Known
+   original operation IDs reconcile through a read-only query. An unrelated ID
+   or chat response never unlocks uncertainty.
+8. A rejected CSRF token renews the session without resending the mutation or
+   removing original recovery data. Choose the original recovery action again.
+   Browser recovery storage must work before financial mutations are sent.
+9. Audit outages affect only the evidence view. **Retry audit retrieval** retries
+   reads independently; confirmed operations can still continue. Failed saved-ID
+   restoration remains visible in Operations instead of showing a readiness message.
+
+If an unconfirmed chat call loses its session before any original operation ID is
+known, the existing backend contracts cannot reconstruct its server-side key.
+The console retains a blocked recovery record and explains the missing original
+reference/context. Loading an unrelated operation cannot unlock it. Chat messages
+and credentials are never persisted by the recovery mechanism.
+
+See [UX verification and manual acceptance](interactive_lab_ux_acceptance.md) for
+recorded checks, remaining browser checks and frontend-only rebuild commands.
 
 The human buttons represent a separate synthetic approver in a single-user
 teaching interface, not production login or multi-user authorization. Host and
@@ -187,18 +209,21 @@ Try the five suggested prompts: Alice's balance, $1 transfer, $100.01 transfer,
 $1,000.01 transfer and last-operation status. The agent discovers exactly the
 three existing MCP tools, validates proposed arguments, supplies its own stable
 key and returns real results to the model. Balance reads may execute immediately.
-For transfers, inspect the exact operation card, use **Inspect / human review**
-when approval is pending, then **Continue / refresh** and **Execute via MCP**.
+For transfers, follow the single verified operation panel: **Review request**,
+confirm independently, then **Execute approved transfer**. Allowed requests offer
+**Execute operation**. Chat-associated execution retains MCP; recovered operations
+without chat association use the existing manual API harness route.
 Approval and execution confirmation are separate; typing either into chat cannot
 authorize them. Denial is final under the existing policy. Replay uses the same
 persisted operation ID. Audit remains available in the existing dashboard.
 
 The timeline shows sanitized discovered tools, real invocations, HTTP status,
 operation ID and policy state. Collapsible details contain validated MCP data.
-Assistant text is labeled unverified and can be wrong even when a card is correct.
-All rendering uses text nodes, with the existing restrictive CSP and CSRF boundary.
+Assistant text is labeled unverified and can be wrong even when persisted state is
+correct. Safe inline bold/code formatting uses text nodes without HTML injection,
+with the existing restrictive CSP and CSRF boundary.
 
-If I/O becomes uncertain, use **Resume original MCP call**. A live server session
+If I/O becomes uncertain, use **Resume original call**. A live server session
 retains the original payload and key, and blocks fresh proposals until recovery.
 There is no automatic financial retry with a new key. Chat sessions expire after
 one idle hour and are capped at 64 sessions, 32 operation cards and one active
@@ -249,6 +274,14 @@ docker compose down   # retains named data volume
 ```
 
 ## Verification
+
+Redesign verification is recorded in [the UX checklist](interactive_lab_ux_acceptance.md).
+Run dependency-free frontend behavior checks with
+`node --test tests/frontend/console.test.cjs`. These also run in the quality CI job.
+The updated browser scripts below are optional and were not executed for this
+redesign. A new browser session/reload clears chat association; persisted IDs remain
+recoverable. After CSRF rejection the console renews the session and requires an
+explicit repeat action; it never silently resends the rejected mutation.
 
 ```powershell
 uv sync --locked --python 3.12

@@ -72,7 +72,7 @@ def chat_environment(settings, monkeypatch, clock):
 
 def test_real_mcp_discovery_mapping_and_explicit_transfer(chat_environment, database):
     async def run():
-        llm = ScriptedLlm(tool_call("request_operation", proposal()))
+        llm = ScriptedLlm(tool_call("request_transfer", proposal()["arguments"]))
         async with chat_environment(llm) as (handler, api):
             result = await handler.handle(
                 ChatTurnCommand("session", "Transfer $1 from Alice to Bob.")
@@ -82,8 +82,13 @@ def test_real_mcp_discovery_mapping_and_explicit_transfer(chat_environment, data
             assert result.operations[0]["decision"] == "ALLOW"
             assert result.events[0]["type"] == "discovery"
             tools = {t["function"]["name"]: t["function"]["parameters"] for t in llm.seen[0][1]}
-            assert set(tools) == {"request_operation", "get_operation", "execute_operation"}
-            assert "idempotency_key" not in tools["request_operation"]["properties"]
+            assert set(tools) == {
+                "request_balance",
+                "request_transfer",
+                "get_operation",
+                "execute_operation",
+            }
+            assert all("idempotency_key" not in t["properties"] for t in tools.values())
             ref = {"operation_id": result.operations[0]["id"]}
             llm.responses = [tool_call("execute_operation", ref)]
             blocked = await handler.handle(
@@ -118,7 +123,7 @@ def test_real_mcp_discovery_mapping_and_explicit_transfer(chat_environment, data
 @pytest.mark.parametrize("amount,decision", [(10001, "REQUIRE_APPROVAL"), (100001, "DENY")])
 def test_policy_human_only_approval_and_execution(chat_environment, amount, decision):
     async def run():
-        llm = ScriptedLlm(tool_call("request_operation", proposal(amount)))
+        llm = ScriptedLlm(tool_call("request_transfer", proposal(amount)["arguments"]))
         async with chat_environment(llm) as (handler, api):
             result = await handler.handle(ChatTurnCommand("session", f"Transfer {amount} cents."))
             op = result.operations[0]
@@ -173,8 +178,8 @@ def test_balance_and_fabricated_model_success(chat_environment):
     async def run():
         llm = ScriptedLlm(
             tool_call(
-                "request_operation",
-                {"tool_name": "get_balance", "arguments": {"account_id": "acct-alice"}},
+                "request_balance",
+                {"account_id": "acct-alice"},
             ),
             execute_last,
         )
@@ -184,7 +189,7 @@ def test_balance_and_fabricated_model_success(chat_environment):
                 result.error is None and result.operations[0]["result"]["balance_cents"] == 1000000
             )
             llm.responses = [
-                tool_call("request_operation", proposal(100001)),
+                tool_call("request_transfer", proposal(100001)["arguments"]),
                 {"content": "SUCCESS! I transferred everything.", "tool_calls": []},
             ]
             result = await handler.handle(
@@ -203,26 +208,23 @@ def test_balance_and_fabricated_model_success(chat_environment):
         ("delete_database", {}),
         ("approve_operation", {}),
         ("execute_operation", {"operation_id": str(uuid4())}),
-        ("request_operation", {**proposal(), "role": "APPROVER"}),
-        ("request_operation", {**proposal(), "idempotency_key": "injected"}),
+        ("request_transfer", {**proposal()["arguments"], "role": "APPROVER"}),
+        ("request_transfer", {**proposal()["arguments"], "idempotency_key": "injected"}),
         (
-            "request_operation",
-            {**proposal(), "arguments": {**proposal()["arguments"], "amount_cents": True}},
+            "request_transfer",
+            {**proposal()["arguments"], "amount_cents": True},
         ),
         (
-            "request_operation",
-            {**proposal(), "arguments": {**proposal()["arguments"], "amount_cents": "100"}},
+            "request_transfer",
+            {**proposal()["arguments"], "amount_cents": "100"},
         ),
         (
-            "request_operation",
-            {**proposal(), "arguments": {**proposal()["arguments"], "amount_cents": 0}},
+            "request_transfer",
+            {**proposal()["arguments"], "amount_cents": 0},
         ),
         (
-            "request_operation",
-            {
-                **proposal(),
-                "arguments": {**proposal()["arguments"], "source_account_id": "../../secrets"},
-            },
+            "request_transfer",
+            {**proposal()["arguments"], "source_account_id": "../../secrets"},
         ),
     ],
 )
@@ -241,7 +243,7 @@ def test_hallucinated_and_malicious_arguments(chat_environment, name, args, capl
 
 def test_owner_and_immutable_arguments(chat_environment):
     async def run():
-        llm = ScriptedLlm(tool_call("request_operation", proposal(10001)))
+        llm = ScriptedLlm(tool_call("request_transfer", proposal(10001)["arguments"]))
         async with chat_environment(llm) as (handler, _):
             result = await handler.handle(ChatTurnCommand("one", "Transfer"))
             ref = {"operation_id": result.operations[0]["id"]}
@@ -270,8 +272,8 @@ def test_history_and_tool_limits(chat_environment):
                 assert len(result.messages) <= 4
             assert len(llm.seen[-1][0]) <= 5
             llm.responses = [
-                tool_call("request_operation", proposal()),
-                tool_call("request_operation", proposal()),
+                tool_call("request_transfer", proposal()["arguments"]),
+                tool_call("request_transfer", proposal()["arguments"]),
             ]
             result = await handler.handle(ChatTurnCommand("one", "transfer"))
             assert result.events[-1]["error"] == "TOOL_LIMIT"

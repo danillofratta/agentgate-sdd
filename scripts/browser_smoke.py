@@ -1,8 +1,44 @@
-"""Optional real-browser QA using installed Edge; separate from offline Pytest."""
+"""Opt-in Edge QA against a running lab. Creates simulated operations; never starts Docker."""
 
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
+
+
+def review(page, *, approve=True):
+    page.locator("#review").click()
+    expect(page.get_by_role("dialog")).to_be_visible()
+    expect(page.locator("#approve")).to_be_disabled()
+    if approve:
+        page.locator("#approval-confirm").check()
+        page.locator("#approve").click()
+        expect(page.locator("#state")).to_have_text("Approved — awaiting execution")
+    else:
+        page.locator("#reject").click()
+        expect(page.locator("#state")).to_have_text("Rejected by reviewer")
+
+
+def inspect_audit(page):
+    page.locator("#timeline > summary").click()
+    for _ in range(100):
+        if "Operation completed" in page.locator("#events").inner_text():
+            break
+        with page.expect_response(lambda r: "/lab/audit?" in r.url) as response:
+            page.locator("#more-audit").click()
+        assert response.value.json()["events"], "Operation absent from loaded audit pages"
+    expect(page.locator("#events")).to_contain_text("Operation completed")
+
+
+def responsive_checks(page, artifacts, prefix):
+    for width, height, label in [
+        (1440, 1100, "desktop"),
+        (820, 1000, "tablet"),
+        (390, 844, "mobile"),
+    ]:
+        page.set_viewport_size({"width": width, "height": height})
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        expect(page.get_by_role("navigation")).to_be_visible()
+        page.screenshot(path=str(artifacts / f"{prefix}-{label}.png"), full_page=True)
 
 
 def main() -> None:
@@ -15,60 +51,47 @@ def main() -> None:
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto("http://127.0.0.1:8080")
         expect(page.locator("#notice")).to_contain_text("Local lab ready")
-        page.screenshot(path=str(artifacts / "lab-desktop.png"), full_page=True)
-        page.get_by_role("button", name="$200 · Approval", exact=True).click()
-        page.get_by_role("button", name="Submit for policy evaluation", exact=False).click()
-        expect(page.locator("#state")).to_have_text("PENDING_APPROVAL")
-        expect(page.locator("#intent")).to_contain_text('"amount_cents": 20000')
-        operation_id = page.locator("#operation-id").input_value()
-        page.get_by_role("button", name="✓ Approve", exact=True).click()
-        expect(page.locator("#state")).to_have_text("READY")
-        page.get_by_role("button", name="Execute operation", exact=False).click()
-        expect(page.locator("#state")).to_have_text("SUCCEEDED")
-        expect(page.locator("#effective")).to_contain_text("HUMAN_APPROVED")
-        expect(page.locator("#replay")).to_be_enabled()
-        alice = page.locator("#alice").inner_text()
-        page.get_by_role("button", name="↻ Replay result", exact=True).click()
-        expect(page.locator("#replay")).to_be_enabled()
-        expect(page.locator("#notice")).to_contain_text("State verified")
-        expect(page.locator("#alice")).to_have_text(alice)
-        expect(page.locator("#request-view")).to_contain_text("execute")
-        # A persistent lab may have many older pages; inspect this operation without resetting it.
-        for _ in range(100):
-            if "OPERATION_EXECUTED" in page.locator("#events").inner_text():
-                break
-            with page.expect_response(lambda r: "/lab/audit?" in r.url) as pending:
-                page.get_by_role("button", name="Load more", exact=True).click()
-            assert pending.value.json()["events"], "Current operation absent from audit"
-        expect(page.locator("#events")).to_contain_text("OPERATION_EXECUTED")
-        page.screenshot(path=str(artifacts / "lab-approved.png"), full_page=True)
-        page.get_by_role("button", name="$1,000.01 · Deny", exact=True).click()
-        page.get_by_role("button", name="Submit for policy evaluation", exact=False).click()
-        expect(page.locator("#state")).to_have_text("DENIED")
-        expect(page.locator("#decision")).to_have_text("DENY")
-        expect(page.locator("#execute")).to_be_disabled()
-        page.get_by_role("button", name="$200 · Approval", exact=True).click()
-        page.get_by_role("button", name="Submit for policy evaluation", exact=False).click()
-        expect(page.locator("#state")).to_have_text("PENDING_APPROVAL")
-        page.get_by_role("button", name="× Reject", exact=True).click()
-        expect(page.locator("#state")).to_have_text("REJECTED")
-        expect(page.locator("#execute")).to_be_disabled()
-        page.get_by_role("button", name="$1 · Allow", exact=True).click()
-        page.get_by_role("button", name="Submit for policy evaluation", exact=False).click()
-        expect(page.locator("#state")).to_have_text("READY")
-        expect(page.locator("#decision")).to_have_text("ALLOW")
-        page.get_by_role("button", name="Execute operation", exact=False).click()
-        expect(page.locator("#state")).to_have_text("SUCCEEDED")
-        page.set_viewport_size({"width": 390, "height": 844})
-        page.screenshot(path=str(artifacts / "lab-mobile.png"), full_page=True)
-        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        before = page.locator("#alice").inner_text()
+        page.get_by_role("button", name="Create manually", exact=True).click()
+        page.locator('[data-amount="100.01"]').click()
+        page.locator("#submit").click()
+        expect(page.locator("#state")).to_have_text("Awaiting human approval")
+        expect(page.locator("#alice")).to_have_text(before)
+        page.locator("#review").click()
+        page.keyboard.press("Escape")
+        expect(page.locator("#review")).to_be_focused()
+        review(page)
+        expect(page.locator("#alice")).to_have_text(before)
+        page.locator("#execute").click()
+        expect(page.locator("#state")).to_have_text("Completed")
+        operation_id = page.locator("#operation-id").inner_text()
+        after = page.locator("#alice").inner_text()
+        assert before != after
+        page.locator("#replay").click()
+        expect(page.locator("#notice")).to_contain_text("Stored outcome retrieved")
+        expect(page.locator("#alice")).to_have_text(after)
+        inspect_audit(page)
+        page.reload()
+        expect(page.locator("#state")).to_have_text("Completed")
+        expect(page.locator("#operation-id")).to_have_text(operation_id)
+        for amount, state in [
+            ("1000.01", "Denied by policy"),
+            ("100.01", "Awaiting human approval"),
+        ]:
+            page.locator("#new-operation").click()
+            page.locator("#amount").fill(amount)
+            page.locator("#submit").click()
+            expect(page.locator("#state")).to_have_text(state)
+        review(page, approve=False)
+        page.locator("#new-operation").click()
+        page.locator("#amount").fill("1.00")
+        page.locator("#submit").click()
+        expect(page.locator("#state")).to_have_text("Authorized — not executed")
+        page.locator("#execute").click()
+        expect(page.locator("#state")).to_have_text("Completed")
+        responsive_checks(page, artifacts, "console")
         assert not errors, errors
-        print(
-            "PASS: real Edge UI — approve, reject, DENY, ALLOW, execution, replay, inspector, audit"
-        )
-        print("PASS: mobile 390px has no horizontal overflow; no JavaScript errors")
-        print("UI approved operation: " + operation_id)
-        print("Screenshots: .lab-artifacts/lab-desktop.png, lab-approved.png, lab-mobile.png")
+        print("PASS: manual proposal, approval/rejection, execute/replay, restore, audit, layouts")
         browser.close()
 
 
