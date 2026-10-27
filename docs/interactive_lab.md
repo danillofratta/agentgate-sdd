@@ -232,9 +232,11 @@ state. Keep operation IDs and use **Resume an existing operation** in the manual
 dashboard after restart. Inspect uncertain state before making another proposal.
 
 See [Milestone C verification](milestone_c_verification.md) for concrete offline,
-Docker/browser evidence and the separately opt-in billable provider smoke. No real
-provider credentials were available during implementation; live interoperability
-remains unverified. Real provider data retention and costs depend on your account.
+Docker/browser evidence and the separately opt-in billable provider smoke. The
+reported manual Groq demonstration is user-reported evidence; offline mocked
+provider tests and deterministic browser checks do not establish live provider
+interoperability. No real-provider smoke was run during portfolio finalization.
+Real provider data retention and costs depend on your account.
 
 ## Persistence and recovery
 

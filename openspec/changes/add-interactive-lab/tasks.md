@@ -1,6 +1,6 @@
 # Tasks
 
-One change, three milestone deliverables. C is authorized on the existing feat/llm_and_chat branch by explicit user clarification, with no new branches, commits, pushes or archive. One Pull Request per milestone.
+One change, three milestone deliverables. The original C implementation on feat/llm_and_chat was merged in #26; the UX redesign was merged in #27. Evidence was reconciled on docs/agentgate-portfolio-finalization on 2026-10-27, as separately requested, with no commit, push or archive. See docs/milestone_c_verification.md for criterion-level evidence and remaining optional checks.
 
 ## 1. Milestone A — Persistent interactive local lab
 
@@ -17,8 +17,8 @@ One change, three milestone deliverables. C is authorized on the existing feat/l
 
 ## 3. Milestone C — LLM agent and chat
 
-- [ ] 3.1 Implement server-side configured model gateway and chat interface proposing validated operations through MCP, displaying authoritative intent/decision/status and explicit execution/replay. Verify fake-provider and fake-MCP workflows, bounded failures and secret isolation; document configuration on the single C branch.
-- [ ] 3.2 Verify prompt injection, malformed output, provider outages, ownership, changed approved arguments and fabricated success cannot bypass policy or human approval. Run A/B regressions and document the complete three-milestone workflow and trust boundaries before completing C.
+- [x] 3.1 Implement server-side configured model gateway and chat interface proposing validated operations through MCP, displaying authoritative intent/decision/status and explicit execution/replay. Verify fake-provider and fake-MCP workflows, bounded failures and secret isolation; document configuration on the single C branch.
+- [x] 3.2 Verify prompt injection, malformed output, provider outages, ownership, changed approved arguments and fabricated success cannot bypass policy or human approval. Run A/B regressions and document the complete three-milestone workflow and trust boundaries before completing C.
 
 ## Workflow follow-up
 
