@@ -109,7 +109,7 @@ SUCCEEDED row requires a result; other states reject a non-null result.
 
 ## Seeding and sensitive data
 
-`uv run --locked python -m agentgate.infrastructure.persistence.seed --database agentgate.sqlite3`
+`uv run --project backend/services/agentgate --locked python -m agentgate.infrastructure.persistence.seed --database agentgate.sqlite3`
 explicitly inserts missing `acct-alice`/`acct-bob` at 1,000,000 cents each using
 `INSERT OR IGNORE`. It preserves existing balances and other stored data. Normal
 initialization does not seed. Do not seed during recovery: missing accounts are
@@ -179,7 +179,7 @@ Keep the original backup immutable and retain the previous database for rollback
    its matching application revision. No destructive automatic reset is used.
 
 The disposable test procedure is executable with
-`uv run --locked pytest tests/infrastructure/test_sqlite_recovery.py`.
+`uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests/infrastructure/test_sqlite_recovery.py`.
 It reuses the backup API, schema initializer, UoW and read adapters; exercises
 WAL and uncommitted changes, repeat reopen, data preservation, principal-scoped
 idempotency, corruption and incompatible schema rejection. It adds no runtime

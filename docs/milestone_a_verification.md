@@ -9,11 +9,11 @@ push was made, and neither OpenSpec change was archived.
 
 | Check | Observed result |
 | --- | --- |
-| `uv sync --locked --python 3.12` | Passed; local Python 3.12.14 |
-| `uv run --locked pytest` | 943 passed: all 925 original tests unchanged, plus 18 lab tests; 69.19 seconds |
-| `uv run --locked ruff check .` | Passed |
-| `uv run --locked ruff format --check .` | Passed |
-| `uv run --locked mypy --strict src` | Passed; 175 source files |
+| `uv sync --project backend/services/agentgate --locked --python 3.12` | Passed; local Python 3.12.14 |
+| `uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests` | 943 passed: all 925 original tests unchanged, plus 18 lab tests; 69.19 seconds |
+| `uv run --project backend/services/agentgate --locked ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | Passed |
+| `uv run --project backend/services/agentgate --locked ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | Passed |
+| `uv run --project backend/services/agentgate --locked mypy --strict backend/services/agentgate/src` | Passed; 175 source files |
 | `openspec validate --all --strict` | Both changes passed |
 | PostgreSQL integration Compose | 16 passed; PostgreSQL 16.15, Python 3.12.15; 1.97 seconds |
 | Docker startup | All three containers healthy; only 127.0.0.1:8080 and 127.0.0.1:8001 published; PostgreSQL not published |
@@ -61,7 +61,7 @@ volume and generated secrets are retained throughout stop, rebuild and restart.
 | Concurrent duplicates | `test_concurrent_duplicate_submission_and_execution` |
 | Independent competing operations | `test_distinct_concurrent_executions_conserve_funds`, `test_opposite_transfers_conserve_total_without_lost_updates` |
 | Isolation and read-only enforcement | `test_read_isolation_consistent_snapshot_and_read_only` |
-| Restart replay | `test_restart_components_preserve_replay`, `scripts/smoke_lab.py` |
+| Restart replay | `test_restart_components_preserve_replay`, `tests/e2e/smoke_lab.py` |
 | Failure and reconciliation | Audit failure, connection loss, deadline, lock and two uncertain-commit tests |
 | First startup/subsequent restart | Windows startup executed; healthy Compose and restart smoke |
 | Interactive decisions/approval/replay | `test_lab_full_workflow_and_secret_isolation`, `test_lab_deny_reject_and_balance_read`, real browser script |
@@ -115,8 +115,8 @@ secrets, database volumes, bytecode and browser screenshots are excluded.
 - `openspec/changes/add-interactive-lab/specs/postgresql-persistence/spec.md`
 - `openspec/changes/add-interactive-lab/tasks.md`
 - `pyproject.toml`
-- `scripts/browser_smoke.py`
-- `scripts/smoke_lab.py`
+- `tests/e2e/browser_smoke.py`
+- `tests/e2e/smoke_lab.py`
 - `scripts/start_lab.ps1`
 - `src/agentgate/application/ports/demo_api_gateway.py`
 - `src/agentgate/components.py`

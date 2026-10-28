@@ -3,15 +3,15 @@
 Run the task 4.3 walkthrough from the repository root:
 
 ```powershell
-uv sync --locked --python 3.12
-uv run --locked pytest tests/infrastructure/test_human_approval_walkthrough.py -v
-uv run --locked pytest tests/infrastructure/test_durable_approval_expiry.py -v
+uv sync --project backend/services/agentgate --locked --python 3.12
+uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests/infrastructure/test_human_approval_walkthrough.py -v
+uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests/infrastructure/test_durable_approval_expiry.py -v
 ```
 
 Each case uses an isolated, seeded temporary SQLite file and an injected
 `FakeClock`. Existing request, policy, approval and query handlers use the existing
 SQLite UoW and read adapters. This is a handler-level demonstration; the
-[README](../README.md#http-demo) also covers the implemented approval HTTP route.
+[README](sqlite_http_development.md#http-demo) also covers the implemented approval HTTP route.
 No credentials, service process, real-time
 sleeps or external services are needed. The offline fixture blocks outbound
 connections and subprocesses; architecture tests enforce tool dispatch placement.

@@ -6,10 +6,10 @@ Use PowerShell from the repository root. Generate two independent ephemeral
 tokens into the current environment; no default credential is provided or printed:
 
 ```powershell
-$env:AGENTGATE_AGENT_TOKEN = uv run --locked python -c "import secrets; print(secrets.token_urlsafe(32))"
-$env:AGENTGATE_APPROVER_TOKEN = uv run --locked python -c "import secrets; print(secrets.token_urlsafe(32))"
+$env:AGENTGATE_AGENT_TOKEN = uv run --project backend/services/agentgate --locked python -c "import secrets; print(secrets.token_urlsafe(32))"
+$env:AGENTGATE_APPROVER_TOKEN = uv run --project backend/services/agentgate --locked python -c "import secrets; print(secrets.token_urlsafe(32))"
 $env:AGENTGATE_DATABASE = Join-Path (Get-Location) ("demo-" + [guid]::NewGuid().ToString('N') + ".sqlite3")
-uv run --locked python -m agentgate.infrastructure.persistence.seed --database $env:AGENTGATE_DATABASE
+uv run --project backend/services/agentgate --locked python -m agentgate.infrastructure.persistence.seed --database $env:AGENTGATE_DATABASE
 ```
 
 Startup rejects missing, duplicate, sample or weak tokens. Values must contain
@@ -33,7 +33,7 @@ $server = Start-Job -ArgumentList $repo,$env:AGENTGATE_DATABASE,$env:AGENTGATE_A
     $env:AGENTGATE_DATABASE = $databasePath
     $env:AGENTGATE_AGENT_TOKEN = $agentToken
     $env:AGENTGATE_APPROVER_TOKEN = $approverToken
-    uv run --locked uvicorn agentgate.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+    uv run --project backend/services/agentgate --locked uvicorn agentgate.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
 }
 ```
 
@@ -98,7 +98,7 @@ input are excluded from events.
 Verify the only transfer and total funds using a local read-only SQLite query:
 
 ```powershell
-uv run --locked python -c "import os, sqlite3; from pathlib import Path; p=Path(os.environ['AGENTGATE_DATABASE']).resolve().as_uri()+'?mode=ro'; c=sqlite3.connect(p, uri=True); rows=c.execute('SELECT id,balance_cents FROM accounts ORDER BY id').fetchall(); c.close(); assert rows == [('acct-alice',989999),('acct-bob',1010001)]; assert sum(v for _,v in rows)==2000000; print(rows)"
+uv run --project backend/services/agentgate --locked python -c "import os, sqlite3; from pathlib import Path; p=Path(os.environ['AGENTGATE_DATABASE']).resolve().as_uri()+'?mode=ro'; c=sqlite3.connect(p, uri=True); rows=c.execute('SELECT id,balance_cents FROM accounts ORDER BY id').fetchall(); c.close(); assert rows == [('acct-alice',989999),('acct-bob',1010001)]; assert sum(v for _,v in rows)==2000000; print(rows)"
 ```
 
 Repeating approval returns 409 and cannot replace the grant.

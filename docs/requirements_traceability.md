@@ -3,8 +3,8 @@
 Scope: every `#### Scenario:` in the three active `agentgate-core` specs, not
 every possible security property. IDs below are local review labels; scenario
 titles are copied exactly. Backticked test references are exact Pytest node IDs,
-including selected parameter cases. Run a node with `uv run --locked pytest
-'<node ID>'`; the full suite runs all parameter cases. Documentation checks are
+including selected parameter cases. Run a node with `uv run --project backend/services/agentgate --locked pytest
+'backend/services/agentgate/<node ID>'`; the full suite runs all parameter cases. Documentation checks are
 explicitly labeled D1–D5 and do not imply an automated behavioral test exists.
 
 Specs: [development-harness](../openspec/changes/agentgate-core/specs/development-harness/spec.md),
@@ -70,9 +70,9 @@ Specs: [development-harness](../openspec/changes/agentgate-core/specs/developmen
 
 ## Reproducible documentation checks
 
-**D1 — Installation and gates.** Follow [README installation](../README.md#install-and-verify)
+**D1 — Installation and gates.** Follow [README installation](../README.md#tests-swagger-and-mcp-inspection)
 in a fresh checkout with the documented interpreter/tool versions. Expect every
-command to exit zero. `uv sync --locked` must leave the lockfile unchanged.
+command to exit zero. `uv sync --project backend/services/agentgate --locked` must leave the lockfile unchanged.
 This release-doc verification used the existing local locked environment; it
 does not claim a clean-machine or hosted CI run. Subsequent task 7.1 evidence is
 recorded in [final quality gates](final_quality_gates.md).
@@ -87,7 +87,7 @@ editing tracked source, is:
 $probe = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.py')
 try {
     Set-Content -LiteralPath $probe -Value 'import os' -Encoding utf8
-    uv run --locked ruff check --no-cache --isolated --select F401 $probe
+    uv run --project backend/services/agentgate --locked ruff check --no-cache --isolated --select F401 $probe
     if ($LASTEXITCODE -ne 1) { throw 'Expected failing lint gate' }
 } finally { Remove-Item -LiteralPath $probe }
 ```
@@ -100,9 +100,9 @@ hosted PR/check and repository branch protection have not been verified here.
 fixtures and parameter cases, beyond the representative exact IDs in the table:
 
 ```powershell
-uv run --locked pytest tests/architecture tests/domain tests/application
-uv run --locked pytest tests/api/test_adversarial_api.py tests/api/test_strict_input.py tests/api/test_security_sentinels.py
-uv run --locked pytest tests/infrastructure/test_request_storage.py tests/infrastructure/test_human_approval_walkthrough.py
+uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests/architecture backend/services/agentgate/tests/domain backend/services/agentgate/tests/application
+uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests/api/test_adversarial_api.py backend/services/agentgate/tests/api/test_strict_input.py backend/services/agentgate/tests/api/test_security_sentinels.py
+uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests/infrastructure/test_request_storage.py backend/services/agentgate/tests/infrastructure/test_human_approval_walkthrough.py
 ```
 
 Expect all to pass; the complete Pytest command includes these suites. Inspect
@@ -113,8 +113,8 @@ behaviors it asserts.
 root (the report path is ignored by Git):
 
 ```powershell
-uv run --locked pytest --junitxml=.pytest_cache/release-docs.xml
-uv run --locked python docs/verify_release.py --junit .pytest_cache/release-docs.xml
+uv run --project backend/services/agentgate --locked pytest --junitxml=.pytest_cache/release-docs.xml
+uv run --project backend/services/agentgate --locked python backend/services/agentgate/tests/e2e/verify_release.py --junit .pytest_cache/release-docs.xml
 ```
 
 The checker compares all scenario titles with table rows, verifies exact node IDs

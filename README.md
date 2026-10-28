@@ -245,12 +245,12 @@ Install Python 3.12, uv 0.12.5 or newer and Node.js (CI's OpenSpec toolchain use
 
 ```powershell
 npm install --global --ignore-scripts --no-audit --no-fund @fission-ai/openspec@1.14.3
-uv sync --locked --python 3.12
-uv run --locked pytest
-node --test tests/frontend/console.test.cjs
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-uv run --locked mypy --strict src
+uv sync --project backend/services/agentgate --locked --python 3.12
+uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests
+node --test frontend/apps/lab-console/tests/console.test.cjs
+uv run --project backend/services/agentgate --locked ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
+uv run --project backend/services/agentgate --locked ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
+uv run --project backend/services/agentgate --locked mypy --strict backend/services/agentgate/src
 openspec validate --all --strict
 git diff --check
 ```
@@ -265,7 +265,7 @@ Swagger lets you inspect schemas; it never injects credentials. For official-SDK
 MCP discovery against the running lab:
 
 ```powershell
-uv run --locked python scripts/mcp_client.py list
+uv run --project backend/services/agentgate --locked python tests/e2e/mcp_client.py list
 ```
 
 The client reads the local MCP secret without printing it. See
@@ -304,3 +304,18 @@ production readiness is claimed. Read the [threat model](docs/threat_model.md).
 ## License
 
 [MIT](LICENSE).
+
+## Monorepo ownership
+
+| Path | Owner |
+| --- | --- |
+| `backend/services/agentgate/` | Python modular monolith: API, Lab BFF and MCP processes, unit/integration tests and locked packaging |
+| `frontend/apps/lab-console/` | Independently built vanilla JS console and unprivileged Nginx; no Python or secrets |
+| `tests/e2e/` | Browser and cross-process acceptance scripts |
+| `infra/` | Deployment infrastructure; Compose entrypoints remain at root |
+| `docs/`, `scripts/`, `openspec/`, `.github/` | Repository-wide documentation, startup, specifications and CI |
+
+Nginx owns the browser URL and proxies `/lab/*` to `lab-bff`. Only backend
+processes mount credentials. The BFF retains JSON routes, session/CSRF validation
+and chat orchestration. See [refactor verification](docs/enterprise_monorepo_verification.md)
+and [file mapping](openspec/changes/refactor-enterprise-monorepo/design.md).
