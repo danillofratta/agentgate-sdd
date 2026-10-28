@@ -8,13 +8,14 @@ These conventions use Python types and Protocols without additional frameworks.
 ## Layout
 
 ```text
-src/agentgate/
+backend/services/agentgate/src/agentgate/
   main.py                       FastAPI factory and router registration
   dependencies.py               sole concrete composition/DI root
   components.py                 typed bundle of constructed collaborators
   domain/
     entities/                   Account, Operation, Approval
-    value_objects/              immutable IDs, money, enums, snapshots
+    value_objects/              immutable IDs, money, principal, requests, snapshots
+    enums/                      Role, Tool, Decision, Reason, approval/operation states
     policies/                   pure operation_policy evaluation
     repositories/               persistence/read contracts using domain types
     events/                     immutable facts, no event delivery
@@ -81,7 +82,7 @@ flowchart TD
     Adapters --> Domain
 ```
 
-[`tests/architecture`](../tests/architecture) checks import direction, cycles,
+[`tests/architecture`](../backend/services/agentgate/tests/architecture) checks import direction, cycles,
 class/file organization, CQRS, hidden dependency resolution and dispatch placement.
 AST checks are regression gates, not a sandbox against hostile Python packages.
 
@@ -110,11 +111,11 @@ transaction. Creating an event does not publish it or prove its commit.
 ## Contracts and constructor wiring
 
 All six persistence contracts live in
-[`domain/repositories/`](../src/agentgate/domain/repositories): `AccountRepository`,
+[`domain/repositories/`](../backend/services/agentgate/src/agentgate/domain/repositories): `AccountRepository`,
 `OperationRepository`, `ApprovalRepository`, `AuditRepository`,
 `OperationReadRepository` and `AuditReadRepository`. Methods use domain types,
 never HTTP schemas, feature results or SQL rows. Implementations live in
-[`infrastructure/repositories/`](../src/agentgate/infrastructure/repositories).
+[`infrastructure/repositories/`](../backend/services/agentgate/src/agentgate/infrastructure/repositories).
 
 Actual application port names are `RequestUnitOfWork`, `RequestUnitOfWorkFactory`,
 `PolicyEvaluatorGateway`, `CredentialGateway`, `PrincipalGateway`,
@@ -123,7 +124,7 @@ Actual application port names are `RequestUnitOfWork`, `RequestUnitOfWorkFactory
 required. Local audit is persistence, not event publication.
 
 This executable excerpt follows
-[`build_components`](../src/agentgate/dependencies.py). It illustrates root wiring;
+[`build_components`](../backend/services/agentgate/src/agentgate/dependencies.py). It illustrates root wiring;
 handlers must not import these concrete adapters:
 
 ```python
@@ -131,7 +132,9 @@ from agentgate.features.evaluate_policy.handler import EvaluatePolicyHandler
 from agentgate.features.request_operation.handler import RequestOperationHandler
 from agentgate.infrastructure.persistence.sqlite_unit_of_work import SqliteUnitOfWork
 from agentgate.infrastructure.runtime.system_clock import SystemClock
-from agentgate.infrastructure.runtime.uuid_operation_id_generator import UuidOperationIdGenerator
+from agentgate.infrastructure.runtime.uuid_operation_id_generator import (
+    UuidOperationIdGenerator,
+)
 
 database = "agentgate.sqlite3"
 request_handler = RequestOperationHandler(
@@ -181,7 +184,7 @@ Milestone A's optional PostgreSQL deployment and local browser adapters are
 described in [interactive lab](interactive_lab.md). One configured database still
 serves commands and queries. Local mode additionally registers the approver-only
 account query and Swagger; the default API surface remains unchanged. `lab.py`
-bootstraps the separate browser proxy; `dependencies.py` remains its concrete
+bootstraps the separate backend Lab BFF; `dependencies.py` remains its concrete
 gateway composition root. All routes stay in feature `endpoint.py` modules.
 
 Milestone B's `mcp.py` bootstraps a separate official-SDK Streamable HTTP server.
@@ -208,7 +211,8 @@ tools, policy rules or repositories.
 
 ```mermaid
 flowchart LR
-    Browser[Local browser + session CSRF] --> Lab[Demo Lab proxy and Chat API]
+    Browser[Local browser + session CSRF] --> Nginx[Independent Nginx frontend]
+    Nginx --> Lab[Backend Lab BFF and Chat API]
     Lab --> Chat[Chat command handler]
     Chat --> LLM[Configured provider gateway]
     LLM --> Untrusted[Untrusted tool suggestions]
@@ -263,3 +267,26 @@ idempotency, cancellation, reconciliation and distributed failures. Local SQLite
 atomicity is not a production-grade distributed transaction. No remote service,
 paid service is required by the manual/MCP deployment. Optional AI chat uses a
 separately configured paid provider and sends bounded conversation context to it.
+
+## Build and ownership boundaries
+
+The Python root is `backend/services/agentgate/`. All source paths above are
+relative to that project. Browser assets belong to `frontend/apps/lab-console/`,
+which builds without Python; Python builds without browser assets. Root Compose
+owns process orchestration and persistent volumes, `infra/` owns deployment
+infrastructure and `tests/e2e/` owns cross-application acceptance.
+Nginx holds no credentials; only the BFF adapts browser JSON requests to trusted
+server-side identities. Proxying preserves the original Host/Origin and CSRF
+context and never retries upstream mutations.
+
+## Domain type classification
+
+`domain/enums/` owns `ApprovalDecision`, `ApprovalState`, `Decision`,
+`OperationState`, `Reason`, `Role` and `Tool`. Each has its original StrEnum
+members and serialized string values, with a single canonical definition.
+`domain/value_objects/` retains `Principal`, IDs, `Money`, `OperationRequest`,
+`BalanceResult`, policy/approval/account snapshots, inspection and audit facts.
+Their names do not turn them into HTTP DTOs. Feature `models.py` owns transport
+schemas; feature `command.py`, `query.py` and `result.py` retain CQRS data types.
+Repository mappers hydrate the same enum values; neither database schema nor
+fingerprint encoding changes. Architecture tests reject enum misplacement.

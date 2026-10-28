@@ -16,7 +16,7 @@ services:
     networks: [testing]
   tests:
     build:
-      context: .
+      context: ./backend/services/agentgate
       target: verification
     environment:
       AGENTGATE_TEST_POSTGRES: postgres-test

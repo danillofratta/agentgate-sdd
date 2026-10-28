@@ -6,29 +6,29 @@ connected. MCP and LLM integrations are **not implemented**. The local SQLite
 simulation is not a production distributed transaction system.
 
 The handler-level boundary is wired in
-[`dependencies.py`](../src/agentgate/dependencies.py) and exposed by the slice's
-[`endpoint.py`](../src/agentgate/features/execute_operation/endpoint.py).
+[`dependencies.py`](../backend/services/agentgate/src/agentgate/dependencies.py) and exposed by the slice's
+[`endpoint.py`](../backend/services/agentgate/src/agentgate/features/execute_operation/endpoint.py).
 `POST /operations/{id}/execute` accepts an empty body. The HTTP adapter returns
 stored/new success or durable FAILED/TIMED_OUT envelopes with status 200;
 unavailable/uncertain storage returns sanitized 503. See the
-[README HTTP demo](../README.md#http-demo) for all five routes.
+[README HTTP demo](sqlite_http_development.md#http-demo) for all five routes.
 
 ## Architecture overview
 
-All source paths below are relative to `src/agentgate/`.
+All source paths below are relative to `backend/services/agentgate/src/agentgate/`.
 
 | Component | Implemented responsibility |
 | --- | --- |
-| [`ExecuteOperationCommand`](../src/agentgate/features/execute_operation/command.py) | Immutable trusted `Principal` and `OperationId`; accepts no replacement arguments, policy, approval, or tool override. |
-| [`ExecuteOperationHandler`](../src/agentgate/features/execute_operation/handler.py) | Enforces agent role/operation ownership, refreshes identity, owns transaction attempts, durable evidence, replay, failure recording, and commit reconciliation. Constructor-injects ports and constructs its own slice-local `Harness`. |
-| [`Harness`](../src/agentgate/features/execute_operation/harness.py) | Owns the execution deadline and retry delay, prepares current authorization, dispatches the one requested tool, validates its result, applies account transitions, and stages success/approval/audit writes. Only this slice's harness invokes `ToolRegistryGateway.dispatch`. |
-| [`Operation`](../src/agentgate/domain/entities/operation.py), [`Approval`](../src/agentgate/domain/entities/approval.py), [`Account`](../src/agentgate/domain/entities/account.py) | Immutable business snapshots with guarded lifecycle, approval binding/expiry/consumption, and integer-cent transfer invariants. Transitions return new values; they perform no I/O. |
-| [`operation_policy.py`](../src/agentgate/domain/policies/operation_policy.py) | Pure policy over explicit trusted principal, request, and account facts; policy version `v1`. Permitted funded transfers of 1–10,000 cents allow, 10,001–100,000 require approval, and larger amounts deny. |
-| [`ToolRegistryGateway`](../src/agentgate/application/ports/tool_registry_gateway.py) | Typed `dispatch(tool, arguments, accounts)` contract returning `BalanceResult` or `TransferArguments`; receives immutable values, no credentials, repositories, or commit handle. |
-| [`LocalToolRegistryGateway`](../src/agentgate/infrastructure/gateways/local_tool_registry_gateway.py) | Fixed tool/type selection. [`GetBalanceAdapter`](../src/agentgate/infrastructure/tools/get_balance_adapter.py) returns a supplied account's balance; [`SimulateTransferAdapter`](../src/agentgate/infrastructure/tools/simulate_transfer_adapter.py) checks account presence and returns the exact transfer arguments. The harness, not the adapter, applies `Account.transfer_to` and persists both accounts. |
-| [`RequestUnitOfWork`](../src/agentgate/application/ports/request_unit_of_work.py) / [`RequestUnitOfWorkFactory`](../src/agentgate/application/ports/request_unit_of_work_factory.py) | Transaction lifetime, deadline, rollback evidence, and domain-owned operation/account/approval/audit repository contracts. Repositories never commit independently. |
-| [`SqliteUnitOfWork`](../src/agentgate/infrastructure/persistence/sqlite_unit_of_work.py) | One connection per transaction, `BEGIN IMMEDIATE`, shared repositories, explicit commit, rollback and close, and typed storage/deadline error classification. |
-| [`database.py`](../src/agentgate/infrastructure/persistence/database.py) / [`SqliteAuditRepository`](../src/agentgate/infrastructure/repositories/sqlite_audit_repository.py) | One versioned SQLite database (current schema v6), conditional writes, nonnegative integer balances, principal/key uniqueness, structured transactional audit, and durable attempt-number allocation. |
+| [`ExecuteOperationCommand`](../backend/services/agentgate/src/agentgate/features/execute_operation/command.py) | Immutable trusted `Principal` and `OperationId`; accepts no replacement arguments, policy, approval, or tool override. |
+| [`ExecuteOperationHandler`](../backend/services/agentgate/src/agentgate/features/execute_operation/handler.py) | Enforces agent role/operation ownership, refreshes identity, owns transaction attempts, durable evidence, replay, failure recording, and commit reconciliation. Constructor-injects ports and constructs its own slice-local `Harness`. |
+| [`Harness`](../backend/services/agentgate/src/agentgate/features/execute_operation/harness.py) | Owns the execution deadline and retry delay, prepares current authorization, dispatches the one requested tool, validates its result, applies account transitions, and stages success/approval/audit writes. Only this slice's harness invokes `ToolRegistryGateway.dispatch`. |
+| [`Operation`](../backend/services/agentgate/src/agentgate/domain/entities/operation.py), [`Approval`](../backend/services/agentgate/src/agentgate/domain/entities/approval.py), [`Account`](../backend/services/agentgate/src/agentgate/domain/entities/account.py) | Immutable business snapshots with guarded lifecycle, approval binding/expiry/consumption, and integer-cent transfer invariants. Transitions return new values; they perform no I/O. |
+| [`operation_policy.py`](../backend/services/agentgate/src/agentgate/domain/policies/operation_policy.py) | Pure policy over explicit trusted principal, request, and account facts; policy version `v1`. Permitted funded transfers of 1–10,000 cents allow, 10,001–100,000 require approval, and larger amounts deny. |
+| [`ToolRegistryGateway`](../backend/services/agentgate/src/agentgate/application/ports/tool_registry_gateway.py) | Typed `dispatch(tool, arguments, accounts)` contract returning `BalanceResult` or `TransferArguments`; receives immutable values, no credentials, repositories, or commit handle. |
+| [`LocalToolRegistryGateway`](../backend/services/agentgate/src/agentgate/infrastructure/gateways/local_tool_registry_gateway.py) | Fixed tool/type selection. [`GetBalanceAdapter`](../backend/services/agentgate/src/agentgate/infrastructure/tools/get_balance_adapter.py) returns a supplied account's balance; [`SimulateTransferAdapter`](../backend/services/agentgate/src/agentgate/infrastructure/tools/simulate_transfer_adapter.py) checks account presence and returns the exact transfer arguments. The harness, not the adapter, applies `Account.transfer_to` and persists both accounts. |
+| [`RequestUnitOfWork`](../backend/services/agentgate/src/agentgate/application/ports/request_unit_of_work.py) / [`RequestUnitOfWorkFactory`](../backend/services/agentgate/src/agentgate/application/ports/request_unit_of_work_factory.py) | Transaction lifetime, deadline, rollback evidence, and domain-owned operation/account/approval/audit repository contracts. Repositories never commit independently. |
+| [`SqliteUnitOfWork`](../backend/services/agentgate/src/agentgate/infrastructure/persistence/sqlite_unit_of_work.py) | One connection per transaction, `BEGIN IMMEDIATE`, shared repositories, explicit commit, rollback and close, and typed storage/deadline error classification. |
+| [`database.py`](../backend/services/agentgate/src/agentgate/infrastructure/persistence/database.py) / [`SqliteAuditRepository`](../backend/services/agentgate/src/agentgate/infrastructure/repositories/sqlite_audit_repository.py) | One versioned SQLite database (current schema v6), conditional writes, nonnegative integer balances, principal/key uniqueness, structured transactional audit, and durable attempt-number allocation. |
 
 DDD keeps invariants and repository contracts in `domain/`. CQRS separates
 commands from read-only queries over the **same database**: executing even
@@ -62,15 +62,15 @@ flowchart TD
 ```
 
 Policy evaluation is injected through
-[`PolicyEvaluatorGateway`](../src/agentgate/application/ports/policy_evaluator_gateway.py);
+[`PolicyEvaluatorGateway`](../backend/services/agentgate/src/agentgate/application/ports/policy_evaluator_gateway.py);
 the execution slice never imports the sibling evaluation slice. Other injected
-contracts are [`PrincipalGateway`](../src/agentgate/application/ports/principal_gateway.py),
-[`ClockGateway`](../src/agentgate/application/ports/clock_gateway.py), and
-[`SleeperGateway`](../src/agentgate/application/ports/sleeper_gateway.py).
+contracts are [`PrincipalGateway`](../backend/services/agentgate/src/agentgate/application/ports/principal_gateway.py),
+[`ClockGateway`](../backend/services/agentgate/src/agentgate/application/ports/clock_gateway.py), and
+[`SleeperGateway`](../backend/services/agentgate/src/agentgate/application/ports/sleeper_gateway.py).
 
 ## Complete execution lifecycle
 
-[`OperationState`](../src/agentgate/domain/value_objects/operation_state.py) supports
+[`OperationState`](../backend/services/agentgate/src/agentgate/domain/enums/operation_state.py) supports
 `DENIED`, `PENDING_APPROVAL`, `READY`, `SUCCEEDED`, `REJECTED`, `EXPIRED`,
 `FAILED`, and `TIMED_OUT`; there is no durable `RUNNING` state or lease.
 
@@ -188,7 +188,7 @@ approval-backed request, a consumed approval. `FAILED` and `TIMED_OUT` replay as
   timeout, unconfirmed rollback, and uncertain commit. A lock-shaped commit error
   is still uncertain. Exhausted confirmed locks become terminal `FAILED` when
   recovery storage permits.
-- **SQLite limits:** [`DeadlineConnection`](../src/agentgate/infrastructure/persistence/deadline_connection.py)
+- **SQLite limits:** [`DeadlineConnection`](../backend/services/agentgate/src/agentgate/infrastructure/persistence/deadline_connection.py)
   checks before statements and sets `busy_timeout` to
   `floor(min(50 ms, remaining budget in ms))`; the connection default is 50 ms.
   A progress callback checks every 100 SQLite VM instructions. Harness checks
@@ -230,7 +230,7 @@ Results are checked before saving. Source permissions, current funds, known
 accounts, and policy agreement are required even after initial authorization.
 
 An inbound adapter must supply a trusted principal. The existing
-[`LocalCredentialGateway`](../src/agentgate/infrastructure/gateways/local_credential_gateway.py)
+[`LocalCredentialGateway`](../backend/services/agentgate/src/agentgate/infrastructure/gateways/local_credential_gateway.py)
 maps configured credentials to server-owned identity/permissions and implements
 principal refresh. The handler separately enforces agent role and concealed
 ownership; request-body identity/role claims cannot authorize execution. This
@@ -294,15 +294,15 @@ for this documentation increment.
 
 | Evidence | Existing test |
 | --- | --- |
-| Actual inward imports/organization, including domain and handler isolation | [`test_actual_package_dependencies_point_inward`](../tests/architecture/test_boundaries.py); CQRS/sole-dispatch and DI fixtures in [`test_cqrs.py`](../tests/architecture/test_cqrs.py) and [`test_dependency_injection.py`](../tests/architecture/test_dependency_injection.py) |
-| Direct-handler authorization, exact tool results, policy uncertainty | [`test_execute_operation_handler.py`](../tests/application/test_execute_operation_handler.py); `test_execution_revalidation_denies_without_consuming_approval` and `test_fresh_principal_and_policy_are_loaded_inside_transaction` in [`test_secure_transfer_handler.py`](../tests/application/test_secure_transfer_handler.py) |
-| Reopened result, consumed approval, human provenance, readable lifecycle audit, and replay without new writes/dispatch | `test_atomic_transfer_reopen_terminal_replay_and_idempotent_submission` in [`test_secure_transfer_execution.py`](../tests/infrastructure/test_secure_transfer_execution.py); `test_offline_balance_execution_durable_after_reopen` in [`test_balance_execution.py`](../tests/infrastructure/test_balance_execution.py) |
-| Concurrent single committed transfer, no overspending, crash/restart replay | [`test_concurrent_execution_recovery.py`](../tests/infrastructure/test_concurrent_execution_recovery.py) |
-| Original deadline, rollback at mutation boundaries, retry classification, SQLite wait/progress constraints, late-commit success | [`test_execution_deadline_retry.py`](../tests/infrastructure/test_execution_deadline_retry.py) |
-| Durable 2/2/1 attempt counts, evidence-before-dispatch, reopened terminal audit/replay, unavailable storage, uncertain commit reconciliation | `test_evidence_precedes_each_attempt_and_exact_2_2_1_counts`, `test_terminal_failure_reopen_replay_identity_and_approval_preservation`, and `test_uncertain_commit_reopens_authoritative_state_without_redispatch` in [`test_execution_failure_recovery.py`](../tests/infrastructure/test_execution_failure_recovery.py) |
-| Approver identity and correlated sanitized approval evidence after reopen | `test_pending_decision_reopen_and_correlated_sanitized_evidence` in [`test_human_approval_walkthrough.py`](../tests/infrastructure/test_human_approval_walkthrough.py) |
+| Actual inward imports/organization, including domain and handler isolation | [`test_actual_package_dependencies_point_inward`](../backend/services/agentgate/tests/architecture/test_boundaries.py); CQRS/sole-dispatch and DI fixtures in [`test_cqrs.py`](../backend/services/agentgate/tests/architecture/test_cqrs.py) and [`test_dependency_injection.py`](../backend/services/agentgate/tests/architecture/test_dependency_injection.py) |
+| Direct-handler authorization, exact tool results, policy uncertainty | [`test_execute_operation_handler.py`](../backend/services/agentgate/tests/application/test_execute_operation_handler.py); `test_execution_revalidation_denies_without_consuming_approval` and `test_fresh_principal_and_policy_are_loaded_inside_transaction` in [`test_secure_transfer_handler.py`](../backend/services/agentgate/tests/application/test_secure_transfer_handler.py) |
+| Reopened result, consumed approval, human provenance, readable lifecycle audit, and replay without new writes/dispatch | `test_atomic_transfer_reopen_terminal_replay_and_idempotent_submission` in [`test_secure_transfer_execution.py`](../backend/services/agentgate/tests/infrastructure/test_secure_transfer_execution.py); `test_offline_balance_execution_durable_after_reopen` in [`test_balance_execution.py`](../backend/services/agentgate/tests/infrastructure/test_balance_execution.py) |
+| Concurrent single committed transfer, no overspending, crash/restart replay | [`test_concurrent_execution_recovery.py`](../backend/services/agentgate/tests/infrastructure/test_concurrent_execution_recovery.py) |
+| Original deadline, rollback at mutation boundaries, retry classification, SQLite wait/progress constraints, late-commit success | [`test_execution_deadline_retry.py`](../backend/services/agentgate/tests/infrastructure/test_execution_deadline_retry.py) |
+| Durable 2/2/1 attempt counts, evidence-before-dispatch, reopened terminal audit/replay, unavailable storage, uncertain commit reconciliation | `test_evidence_precedes_each_attempt_and_exact_2_2_1_counts`, `test_terminal_failure_reopen_replay_identity_and_approval_preservation`, and `test_uncertain_commit_reopens_authoritative_state_without_redispatch` in [`test_execution_failure_recovery.py`](../backend/services/agentgate/tests/infrastructure/test_execution_failure_recovery.py) |
+| Approver identity and correlated sanitized approval evidence after reopen | `test_pending_decision_reopen_and_correlated_sanitized_evidence` in [`test_human_approval_walkthrough.py`](../backend/services/agentgate/tests/infrastructure/test_human_approval_walkthrough.py) |
 
-[`SqliteAuditReadRepository`](../src/agentgate/infrastructure/repositories/sqlite_audit_read_repository.py)
+[`SqliteAuditReadRepository`](../backend/services/agentgate/src/agentgate/infrastructure/repositories/sqlite_audit_read_repository.py)
 reopens storage read-only and returns typed events ordered by increasing event ID.
 `ListAuditHandler` enforces approver access and `AuditPage` limits pages to 1–100.
 Reopen tests above read lifecycle events after closing execution transactions;
@@ -312,11 +312,11 @@ audit endpoint adapter. Inspection does not append audit or persist expiry.
 Required local checks:
 
 ```console
-uv sync --locked --python 3.12
-uv run --locked pytest
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-uv run --locked mypy --strict src
+uv sync --project backend/services/agentgate --locked --python 3.12
+uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests
+uv run --project backend/services/agentgate --locked ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
+uv run --project backend/services/agentgate --locked ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
+uv run --project backend/services/agentgate --locked mypy --strict backend/services/agentgate/src
 openspec validate --all --strict
 ```
 

@@ -34,14 +34,14 @@ this network namespace, using `http://127.0.0.1:8000`. No external service was
 contacted. The tmpfs choice follows task 7.1's documented storage isolation;
 the database is a real SQLite file, retained across both server processes.
 
-The [acceptance runner](run_final_e2e_acceptance.py) runs **outside Pytest**,
+The [acceptance runner](../tests/e2e/run_final_e2e_acceptance.py) runs **outside Pytest**,
 preserving the suite's socket/subprocess guards. It generates distinct 48-byte
 URL-safe synthetic tokens in memory, supplies them only through child process
 environment, disables proxy use, and never prints headers or token values.
 Its explicit seed command is the README command with offline uv resolution:
 
 ```text
-uv run --offline --locked python -m agentgate.infrastructure.persistence.seed --database <fresh temporary SQLite path>
+uv run --project backend/services/agentgate --offline --locked python -m agentgate.infrastructure.persistence.seed --database <fresh temporary SQLite path>
 ```
 
 Seeding initialized schema v6 and both balances at 1,000,000 cents. The final
@@ -60,7 +60,7 @@ another authentication mode or waiting. No HTTP dependencies were overridden.
 Each launch used the documented factory command:
 
 ```text
-uv run --offline --locked uvicorn agentgate.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+uv run --project backend/services/agentgate --offline --locked uvicorn agentgate.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
 | Evidence | First process | Restarted process |
@@ -209,13 +209,13 @@ All required gates ran offline in the isolated container:
 | Command | Exit | Result |
 | --- | --- | --- |
 | `uv sync --offline --locked --python 3.12` | 0 | 29 resolved, 28 installed packages checked |
-| `uv run --offline --locked pytest --junitxml=/tmp/acceptance-pytest.xml` | 0 | **925 passed**, 1 warning, 10.95 s; includes all 123 architecture tests and the added overlap test |
-| `uv run --offline --locked ruff check .` | 0 | All checks passed |
-| `uv run --offline --locked ruff format --check .` | 0 | 227 files already formatted |
-| `uv run --offline --locked mypy --strict src` | 0 | No issues in 151 source files |
+| `uv run --project backend/services/agentgate --offline --locked pytest --junitxml=/tmp/acceptance-pytest.xml` | 0 | **925 passed**, 1 warning, 10.95 s; includes all 123 architecture tests and the added overlap test |
+| `uv run --project backend/services/agentgate --offline --locked ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | 0 | All checks passed |
+| `uv run --project backend/services/agentgate --offline --locked ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | 0 | 227 files already formatted |
+| `uv run --project backend/services/agentgate --offline --locked mypy --strict backend/services/agentgate/src` | 0 | No issues in 151 source files |
 | `openspec validate --all --strict` | 0 | 1 change passed, 0 failed |
 
-`uv run --offline --locked python docs/verify_release.py --junit /tmp/acceptance-pytest.xml`
+`uv run --project backend/services/agentgate --offline --locked python backend/services/agentgate/tests/e2e/verify_release.py --junit /tmp/acceptance-pytest.xml`
 also passed: 42 scenarios, 87 exact passing test references, five documentation
 check definitions and 75 relative links. The JUnit report was exported beside
 the retained acceptance evidence.
@@ -236,7 +236,7 @@ docker cp tests agentgate-acceptance-reproduce:/workspace/
 docker cp docs agentgate-acceptance-reproduce:/workspace/
 docker cp openspec agentgate-acceptance-reproduce:/workspace/
 docker exec agentgate-acceptance-reproduce uv sync --offline --locked --python 3.12
-docker exec agentgate-acceptance-reproduce uv run --offline --locked python docs/run_final_e2e_acceptance.py
+docker exec agentgate-acceptance-reproduce uv run --project backend/services/agentgate --offline --locked python tests/e2e/run_final_e2e_acceptance.py
 ```
 
 The last command prints sanitized evidence JSON with a fresh temporary directory

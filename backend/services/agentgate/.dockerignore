@@ -1,0 +1,13 @@
+.git
+.venv*
+__pycache__
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.lab-secrets
+.env
+*.sqlite3*
+docs
+openspec
+.agents
+.codex

@@ -10,7 +10,7 @@ Propose, review, apply, verify; archive only when separately requested.
 Use DDD, CQRS, Vertical Slice, and Hexagonal Architecture in one modular monolith.
 These conventions replace older conflicting layouts.
 
-- Every feature lives at `src/agentgate/features/<feature_name>/`.
+- Every feature lives at `backend/services/agentgate/src/agentgate/features/<feature_name>/`.
 - A feature owns its `endpoint.py`, `command.py` or `query.py`, `handler.py`,
   `models.py` (HTTP schemas), and `result.py`, when applicable.
 - Every endpoint/router belongs to its feature's `endpoint.py`. Never create
@@ -25,6 +25,11 @@ These conventions replace older conflicting layouts.
   event publishing uses `EventPublisher`. Do not introduce I-prefixed or generic
   contracts or add publishers/gateways without a real use case. Local audit
   persistence uses `AuditRepository`; it does not publish events.
+
+- The Python project root is `backend/services/agentgate/`; source-local paths below are relative to that project.
+- Domain enums belong in `domain/enums/`; genuine Value Objects remain in `domain/value_objects/`.
+- Browser assets/tests and the Nginx build belong to `frontend/apps/lab-console/`; it contains no backend credentials or Python runtime.
+- Cross-application acceptance lives in `tests/e2e/`. Root Compose preserves existing volume names and secret paths.
 
 ## Dependency rules
 
@@ -67,9 +72,9 @@ subprocess tools, or arbitrary execution. Never add permissive fallback policy o
 sample/default credentials. Never expose secrets, authorization headers, rejected
 raw input, or exception details. Keep request/approval/audit persistence atomic.
 
-Use `uv sync --locked --python 3.12`, then `uv run --locked pytest`,
+From `backend/services/agentgate/`, use `uv sync --locked --python 3.12`, then `uv run --locked pytest`,
 `uv run --locked ruff check .`, `uv run --locked ruff format --check .`,
-`uv run --locked mypy --strict src`, and `openspec validate --all --strict`.
+`uv run --locked mypy --strict src`, and run `openspec validate --all --strict` from the repository root.
 Architecture tests are part of Pytest. Tests use fake ports/time and temporary
 SQLite databases; outbound network and subprocesses are blocked. Verify policy
 boundaries, direct-handler authorization, idempotency/concurrent/restart replay,

@@ -142,12 +142,12 @@ Compatibility review:
 
 | Check | Local result |
 | --- | --- |
-| `uv sync --locked --python 3.12` | PASS; 50 resolved, 49 checked; lockfile unchanged |
-| `uv run --locked pytest` | PASS; 1,055 tests in 45.34 s on Python 3.12.14 Windows |
-| `node --test tests/frontend/console.test.cjs` | PASS; 43 tests |
-| `uv run --locked ruff check .` | PASS |
-| `uv run --locked ruff format --check .` | PASS; 316 files already formatted on the final run (314 before temporary verification tooling) |
-| `uv run --locked mypy --strict src` | PASS; 199 source files |
+| `uv sync --project backend/services/agentgate --locked --python 3.12` | PASS; 50 resolved, 49 checked; lockfile unchanged |
+| `uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests` | PASS; 1,055 tests in 45.34 s on Python 3.12.14 Windows |
+| `node --test frontend/apps/lab-console/tests/console.test.cjs` | PASS; 43 tests |
+| `uv run --project backend/services/agentgate --locked ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | PASS |
+| `uv run --project backend/services/agentgate --locked ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | PASS; 316 files already formatted on the final run (314 before temporary verification tooling) |
+| `uv run --project backend/services/agentgate --locked mypy --strict backend/services/agentgate/src` | PASS; 199 source files |
 | `openspec validate --all --strict` | PASS; four active changes |
 | `git diff --check` and staged deletion check | PASS |
 | Mermaid 11.12.0 parser | PASS; four diagrams across README and architecture |

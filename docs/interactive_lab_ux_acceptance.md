@@ -36,32 +36,32 @@ allowlisted. No business logic or API contract changed.
 
 - `openspec/changes/redesign-interactive-lab-ux/`: proposal, design, specification,
   task tracking and CLI metadata; existing changes are untouched.
-- `src/agentgate/features/demo_lab/static/{index.html,style.css,app.js}`: console,
+- `frontend/apps/lab-console/{index.html,src/app.js,src/style.css}`: console,
   shared workflow, independent review, safe chat and recovery.
-- `tests/frontend/console.test.cjs`: offline Node behavior tests with a minimal DOM
+- `frontend/apps/lab-console/tests/console.test.cjs`: offline Node behavior tests with a minimal DOM
   adapter and deterministic API responses. This is not a browser layout engine.
 - `tests/api/test_interactive_lab.py`: actual protected proxy/API/SQLite lifecycle,
   deliberate approval without financial effect, renewal, expiry and safe replay.
-- `scripts/browser_smoke.py`, `scripts/browser_chat_smoke.py`: optional updated
+- `tests/e2e/browser_smoke.py`, `tests/e2e/browser_chat_smoke.py`: optional updated
   real-browser checks; not executed in this session.
 - `.github/workflows/ci.yml`: run offline frontend checks in the existing quality job.
 - `docs/interactive_lab.md` and this checklist: workflow and verification limits.
 
 Pre-existing edits to chat handlers, validation, agent tests and
-`scripts/verify_chat_app.py` were preserved. No branches, commits, pushes or
+`tests/e2e/verify_chat_app.py` were preserved. No branches, commits, pushes or
 archival were performed.
 
 ## Recorded automated verification — 2026-10-26
 
-- `uv sync --locked --python 3.12`: passed (50 packages resolved; 49 checked).
-- `uv run --locked pytest tests/api/test_interactive_lab.py tests/api/test_agent_chat.py tests/application/test_agent_safety.py tests/infrastructure/test_agent_integrations.py tests/architecture -q`: 214 passed.
-- `node --test tests/frontend/console.test.cjs`: 43 passed; offline checks for exact
+- `uv sync --project backend/services/agentgate --locked --python 3.12`: passed (50 packages resolved; 49 checked).
+- `uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests/api/test_interactive_lab.py backend/services/agentgate/tests/api/test_agent_chat.py backend/services/agentgate/tests/application/test_agent_safety.py backend/services/agentgate/tests/infrastructure/test_agent_integrations.py backend/services/agentgate/tests/architecture -q`: 214 passed.
+- `node --test frontend/apps/lab-console/tests/console.test.cjs`: 43 passed; offline checks for exact
   cents, state guards, shared panel, safe formatting, inspector redaction,
   duplicate locks, CSRF renewal without replay, uncertainty, independent review,
   invalid IDs, original-key recovery, reload and explicit MCP execution grant.
-- `uv run --locked ruff check .`: passed.
-- `uv run --locked ruff format --check .`: passed (309 files).
-- `uv run --locked mypy --strict src`: passed (199 source files).
+- `uv run --project backend/services/agentgate --locked ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e`: passed.
+- `uv run --project backend/services/agentgate --locked ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e`: passed (309 files).
+- `uv run --project backend/services/agentgate --locked mypy --strict backend/services/agentgate/src`: passed (199 source files).
 - `openspec validate --all --strict`: passed (all three active changes).
 
 No Docker/Compose/build command, real model call, full integration suite or
@@ -160,9 +160,9 @@ only. Keep account balances sufficient for the selected scenarios.
 Optional scripts (not run):
 
 ```powershell
-uv run --locked --with playwright==1.56.0 python scripts/browser_smoke.py
+uv run --project backend/services/agentgate --locked --with playwright==1.56.0 python tests/e2e/browser_smoke.py
 # Requires the explicitly configured fake-provider chat test environment:
-uv run --locked --with playwright==1.56.0 python scripts/browser_chat_smoke.py
+uv run --project backend/services/agentgate --locked --with playwright==1.56.0 python tests/e2e/browser_chat_smoke.py
 ```
 
 ## Rebuild only the affected frontend service

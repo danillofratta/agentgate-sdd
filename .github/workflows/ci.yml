@@ -36,7 +36,7 @@ jobs:
           enable-cache: false
 
       - name: Install locked Python dependencies
-        run: uv sync --locked --group dev
+        run: uv sync --project backend/services/agentgate --locked --group dev
 
       - name: Set up Node for OpenSpec
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -49,19 +49,19 @@ jobs:
         run: npm install --global --ignore-scripts --no-audit --no-fund @fission-ai/openspec@1.14.3
 
       - name: Pytest (including architecture tests)
-        run: uv run --locked python -m pytest -q
+        run: uv run --project backend/services/agentgate --locked python -m pytest backend/services/agentgate/tests -q
 
       - name: Offline frontend behavior
-        run: node --test tests/frontend/console.test.cjs
+        run: node --test frontend/apps/lab-console/tests/console.test.cjs
 
       - name: Ruff lint
-        run: uv run --locked python -m ruff check .
+        run: uv run --project backend/services/agentgate --locked python -m ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
 
       - name: Ruff formatting
-        run: uv run --locked python -m ruff format --check .
+        run: uv run --project backend/services/agentgate --locked python -m ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
 
       - name: Mypy strict
-        run: uv run --locked python -m mypy --strict src
+        run: uv run --project backend/services/agentgate --locked python -m mypy --strict backend/services/agentgate/src
 
       - name: OpenSpec strict validation
         run: openspec validate --all --strict
@@ -69,7 +69,7 @@ jobs:
   interactive-lab:
     name: PostgreSQL integration and Docker smoke
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,8 +83,8 @@ jobs:
           enable-cache: false
       - name: Install locked dependencies and generate ephemeral secrets
         run: |
-          uv sync --locked --python 3.12
-          uv run --locked python - <<'PY'
+          uv sync --project backend/services/agentgate --locked --python 3.12
+          uv run --project backend/services/agentgate --locked python - <<'PY'
           import os
           import secrets
           from pathlib import Path
@@ -101,14 +101,35 @@ jobs:
           PY
           sudo chgrp 10001 .lab-secrets/*
           sudo chmod 0640 .lab-secrets/*
+      - name: Validate Compose entrypoints
+        run: |
+          docker compose config --quiet
+          docker compose -f compose.test.yaml config --quiet
+          docker compose -f compose.yaml -f compose.chat-test.yaml config --quiet
       - name: PostgreSQL integration tests
         run: docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
       - name: Start local lab
         run: docker compose up --build -d --wait
+      - name: Nginx delivery and proxy security
+        run: uv run --project backend/services/agentgate --locked python tests/e2e/smoke_proxy.py
       - name: Docker workflow and restart smoke
-        run: uv run --locked python scripts/smoke_lab.py
+        run: uv run --project backend/services/agentgate --locked python tests/e2e/smoke_lab.py
       - name: Real MCP SDK workflow and restart smoke
-        run: uv run --locked python scripts/smoke_mcp.py
+        run: uv run --project backend/services/agentgate --locked python tests/e2e/smoke_mcp.py
+      - name: Install verification browser
+        run: uv run --project backend/services/agentgate --locked --with playwright==1.56.0 playwright install --with-deps chromium
+      - name: Browser human approval and replay
+        env:
+          AGENTGATE_BROWSER_CHANNEL: chromium
+        run: uv run --project backend/services/agentgate --locked --with playwright==1.56.0 python tests/e2e/browser_smoke.py
+      - name: Start explicit fake-provider BFF
+        run: docker compose -f compose.yaml -f compose.chat-test.yaml up -d --wait
+      - name: Fake-provider chat with real MCP and PostgreSQL restart
+        run: uv run --project backend/services/agentgate --locked python tests/e2e/smoke_chat.py
+      - name: Browser chat with independent human approval
+        env:
+          AGENTGATE_BROWSER_CHANNEL: chromium
+        run: uv run --project backend/services/agentgate --locked --with playwright==1.56.0 python tests/e2e/browser_chat_smoke.py
       - name: Stop test containers and retain data volumes
         if: always()
         run: |

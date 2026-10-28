@@ -124,11 +124,11 @@ system**. It has no OAuth discovery or token delegation. Do not distribute the
 secret files or expose these services beyond the trusted local host.
 
 ```powershell
-uv run --locked python scripts/mcp_client.py list
-uv run --locked python scripts/mcp_client.py request_operation '{"tool_name":"get_balance","arguments":{"account_id":"acct-alice"},"idempotency_key":"mcp-balance-demo"}'
+uv run --project backend/services/agentgate --locked python tests/e2e/mcp_client.py list
+uv run --project backend/services/agentgate --locked python tests/e2e/mcp_client.py request_operation '{"tool_name":"get_balance","arguments":{"account_id":"acct-alice"},"idempotency_key":"mcp-balance-demo"}'
 # Replace the UUID with the returned id; execution stays explicit:
-uv run --locked python scripts/mcp_client.py get_operation '{"operation_id":"00000000-0000-4000-8000-000000000001"}'
-uv run --locked python scripts/mcp_client.py execute_operation '{"operation_id":"00000000-0000-4000-8000-000000000001"}'
+uv run --project backend/services/agentgate --locked python tests/e2e/mcp_client.py get_operation '{"operation_id":"00000000-0000-4000-8000-000000000001"}'
+uv run --project backend/services/agentgate --locked python tests/e2e/mcp_client.py execute_operation '{"operation_id":"00000000-0000-4000-8000-000000000001"}'
 ```
 
 The client reads only the MCP credential, without printing it. The script uses
@@ -156,7 +156,7 @@ storage, adding only a missing MCP token for an existing A installation.
 
 ## AI chat provider configuration
 
-The existing frontend process hosts the server-side agent; no additional port is
+The backend `lab-bff` process hosts the server-side agent; no additional public port is
 published. Its agent handler receives only a model gateway, MCP credential and
 bounded chat-memory port. The independent manual human controls continue to use
 their separate approver identity. No authentication settings, database, arbitrary
@@ -279,25 +279,25 @@ docker compose down   # retains named data volume
 
 Redesign verification is recorded in [the UX checklist](interactive_lab_ux_acceptance.md).
 Run dependency-free frontend behavior checks with
-`node --test tests/frontend/console.test.cjs`. These also run in the quality CI job.
+`node --test frontend/apps/lab-console/tests/console.test.cjs`. These also run in the quality CI job.
 The updated browser scripts below are optional and were not executed for this
 redesign. A new browser session/reload clears chat association; persisted IDs remain
 recoverable. After CSRF rejection the console renews the session and requires an
 explicit repeat action; it never silently resends the rejected mutation.
 
 ```powershell
-uv sync --locked --python 3.12
-uv run --locked pytest
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-uv run --locked mypy --strict src
+uv sync --project backend/services/agentgate --locked --python 3.12
+uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests
+uv run --project backend/services/agentgate --locked ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
+uv run --project backend/services/agentgate --locked ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
+uv run --project backend/services/agentgate --locked mypy --strict backend/services/agentgate/src
 openspec validate --all --strict
 docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
 docker compose -f compose.test.yaml down
-uv run --locked python scripts/smoke_lab.py
-uv run --locked python scripts/smoke_mcp.py
+uv run --project backend/services/agentgate --locked python tests/e2e/smoke_lab.py
+uv run --project backend/services/agentgate --locked python tests/e2e/smoke_mcp.py
 # Optional UI QA using installed Microsoft Edge:
-uv run --locked --with playwright==1.56.0 python scripts/browser_smoke.py
+uv run --project backend/services/agentgate --locked --with playwright==1.56.0 python tests/e2e/browser_smoke.py
 ```
 
 Default tests remain offline with outbound network/subprocesses blocked. Opt-in
@@ -332,3 +332,36 @@ restarts only API/MCP for durable replay. It creates operations and transfers
 frontend workflow grants approval. Run it on a trusted local demo with enough
 Alice balance and no concurrent manual changes. Container logs and the client
 must never be configured to print secret headers or bodies.
+
+## Independent application builds
+
+The frontend image builds from `frontend/apps/lab-console/` with Nginx and no
+Python. Backend API, BFF and MCP images build from `backend/services/agentgate/`
+without frontend source. Root Compose connects them; `lab-bff` has no published
+port. Existing `postgres_data` and `.lab-secrets/*` locations are unchanged.
+
+```powershell
+docker compose build frontend
+docker compose build api lab-bff mcp
+docker compose up -d --wait
+```
+
+Nginx preserves the original Host/Origin/session/CSRF context for `/lab/*`, clears
+untrusted forwarding headers, disables upstream retries and serves only known
+static assets. The BFF no longer serves `/`, `/app.js` or `/style.css` directly.
+Restarting `lab-bff` loses in-memory chat sessions; PostgreSQL operation IDs,
+results, approval bindings and replay remain durable. Recover the original
+operation before proposing another transfer after an uncertain response.
+
+Fake-provider acceptance (no paid LLM calls):
+
+```powershell
+docker compose -f compose.yaml -f compose.chat-test.yaml up -d --wait
+uv run --project backend/services/agentgate --locked python tests/e2e/smoke_chat.py
+uv run --project backend/services/agentgate --locked --with playwright==1.56.0 python tests/e2e/browser_chat_smoke.py
+docker compose up -d --wait
+```
+
+The test overlay mounts only `tests/e2e` into `lab-bff`; it never injects credentials
+or provider code into Nginx. `AGENTGATE_BROWSER_CHANNEL` selects an installed
+browser for the QA scripts (default `msedge`; `chromium` for CI).

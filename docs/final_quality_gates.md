@@ -66,7 +66,7 @@ Installation commands inside the build:
 
 ```sh
 npm install --global --ignore-scripts --no-audit --no-fund @fission-ai/openspec@1.14.3
-uv sync --locked --group dev --python /usr/local/bin/python3.12
+uv sync --project backend/services/agentgate --locked --group dev --python /usr/local/bin/python3.12
 ```
 
 `UV_NO_CACHE=1` and `UV_PYTHON_DOWNLOADS=never` were set. uv created a fresh
@@ -108,10 +108,10 @@ same container. `--offline` additionally prevented uv dependency downloads.
 
 | Command | Exit | Actual result |
 | --- | --- | --- |
-| `uv run --offline --locked python -m pytest` | 0 | 924 passed, 1 warning; 924 collected; 8.56 seconds |
-| `uv run --offline --locked python -m ruff check .` | 0 | All checks passed |
-| `uv run --offline --locked python -m ruff format --check .` | 0 | 224 files already formatted |
-| `uv run --offline --locked python -m mypy --strict src` | 0 | No issues in 151 source files |
+| `uv run --project backend/services/agentgate --offline --locked python -m pytest` | 0 | 924 passed, 1 warning; 924 collected; 8.56 seconds |
+| `uv run --project backend/services/agentgate --offline --locked python -m ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | 0 | All checks passed |
+| `uv run --project backend/services/agentgate --offline --locked python -m ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | 0 | 224 files already formatted |
+| `uv run --project backend/services/agentgate --offline --locked python -m mypy --strict backend/services/agentgate/src` | 0 | No issues in 151 source files |
 | `openspec validate --all --strict` | 0 | `change/agentgate-core` passed; 1 item passed, 0 failed |
 
 The final five-gate script used `set -eu` and exited zero. Its freshly started
@@ -139,7 +139,7 @@ No bypass or new exception to the guard was introduced.
 This additional command ran in the isolated container:
 
 ```sh
-uv run --offline --locked python -m pytest -q --setup-show \
+uv run --project backend/services/agentgate --offline --locked python -m pytest backend/services/agentgate/tests -q --setup-show \
   tests/infrastructure/test_request_storage.py::test_network_and_subprocess_guards
 ```
 
@@ -260,7 +260,7 @@ or evidence about power-loss durability.
 
 ### Follow-up repetitions and platform comparison
 
-Commands ran with `uv run --offline --locked python -m pytest` plus these arguments:
+Commands ran with `uv run --project backend/services/agentgate --offline --locked python -m pytest` plus these arguments:
 
 | Check | Arguments / environment | Actual result |
 | --- | --- | --- |
@@ -288,7 +288,7 @@ coverage of bounded lock failure as well as concurrent success and rollback.
 
 The native comparison used Windows 11 (`10.0.26200`), Python 3.12.14,
 SQLite 3.53.1, and uv 0.12.5. A separate clean checkout received a new `.venv`
-using `uv sync --locked --group dev --python 3.12.14`; the developer `.venv`
+using `uv sync --project backend/services/agentgate --locked --group dev --python 3.12.14`; the developer `.venv`
 was not used. Windows execution had the existing fixture guards and uv offline
 mode, but **no OS-level network restriction**, so it is only a platform
 comparison. Windows success alone does not prove an OS-specific SQLite bug:
@@ -307,10 +307,10 @@ Compared with the committed `.github/workflows/ci.yml`:
 | --- | --- | --- | --- |
 | Python | 3.12.14 | 3.12.14 | Same supported interpreter |
 | uv | 0.12.5 | 0.12.5 | Same version |
-| Dependencies | `uv sync --locked --group dev`, explicit Python path | `uv sync --locked --group dev` | Same committed lock and dev group |
-| Pytest | `python -m pytest` | `python -m pytest -q` | Same discovery and architecture coverage; verbosity differs |
+| Dependencies | `uv sync --project backend/services/agentgate --locked --group dev`, explicit Python path | `uv sync --project backend/services/agentgate --locked --group dev` | Same committed lock and dev group |
+| Pytest | `python -m pytest` | `python -m pytest backend/services/agentgate/tests -q` | Same discovery and architecture coverage; verbosity differs |
 | Ruff | Lint and format check through `python -m ruff` | Same | Equivalent |
-| Mypy | `python -m mypy --strict src` | Same | Equivalent |
+| Mypy | `python -m mypy --strict backend/services/agentgate/src` | Same | Equivalent |
 | OpenSpec | 1.14.3; `validate --all --strict` | Same CLI version and command | Equivalent |
 | Node | 22.16.0 | 22.16.0 | Same version |
 | OS | Debian 12 in Docker/WSL2 | Ubuntu 24.04 GitHub runner | Kernel, libc, SQLite, filesystem and scheduling may differ |
@@ -367,7 +367,7 @@ COPY --from=uv /uv /usr/local/bin/uv
 ENV PATH="/opt/node/bin:${PATH}" UV_PYTHON_DOWNLOADS=never UV_NO_CACHE=1 DO_NOT_TRACK=1
 WORKDIR /workspace
 COPY . .
-RUN uv sync --locked --group dev --python /usr/local/bin/python3.12
+RUN uv sync --project backend/services/agentgate --locked --group dev --python /usr/local/bin/python3.12
 RUN python --version && uv --version && node --version && openspec --version && sha256sum uv.lock
 DOCKERFILE
 docker build --pull --no-cache -t agentgate-quality:task71 \
@@ -397,17 +397,17 @@ for family, address in [(socket.AF_INET, '192.0.2.1'), (socket.AF_INET6, '2001:d
 PY
 docker exec -i agentgate-quality-reproduce sh <<'SH'
 set -u
-uv run --offline --locked python -m pytest
+uv run --project backend/services/agentgate --offline --locked python -m pytest
 printf 'pytest exit: %s\n' "$?"
-uv run --offline --locked python -m ruff check .
+uv run --project backend/services/agentgate --offline --locked python -m ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
 printf 'ruff lint exit: %s\n' "$?"
-uv run --offline --locked python -m ruff format --check .
+uv run --project backend/services/agentgate --offline --locked python -m ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e
 printf 'ruff format exit: %s\n' "$?"
-uv run --offline --locked python -m mypy --strict src
+uv run --project backend/services/agentgate --offline --locked python -m mypy --strict backend/services/agentgate/src
 printf 'mypy exit: %s\n' "$?"
 openspec validate --all --strict
 printf 'openspec exit: %s\n' "$?"
-uv run --offline --locked python -m pytest -q --setup-show tests/infrastructure/test_request_storage.py::test_network_and_subprocess_guards
+uv run --project backend/services/agentgate --offline --locked python -m pytest backend/services/agentgate/tests -q --setup-show backend/services/agentgate/tests/infrastructure/test_request_storage.py::test_network_and_subprocess_guards
 printf 'fixture self-test exit: %s\n' "$?"
 SH
 docker rm -f agentgate-quality-reproduce

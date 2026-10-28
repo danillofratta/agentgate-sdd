@@ -18,7 +18,7 @@ services:
     networks: [persistence]
 
   api:
-    build: .
+    build: ./backend/services/agentgate
     environment:
       AGENTGATE_POSTGRES_HOST: postgres
       AGENTGATE_POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
@@ -37,8 +37,8 @@ services:
       retries: 30
     networks: [persistence, lab]
 
-  frontend:
-    build: .
+  lab-bff:
+    build: ./backend/services/agentgate
     command: [/app/.venv/bin/uvicorn, "agentgate.lab:create_app", --factory, --host, "0.0.0.0", --port, "8080", --no-access-log]
     environment:
       AGENTGATE_LOCAL_DEVELOPMENT: "1"
@@ -54,19 +54,30 @@ services:
       AGENTGATE_LLM_MAX_TOOL_CALLS: ${AGENTGATE_LLM_MAX_TOOL_CALLS:-6}
       AGENTGATE_LLM_MAX_HISTORY: ${AGENTGATE_LLM_MAX_HISTORY:-12}
     secrets: [agent_token, approver_token, mcp_token, llm_api_key]
-    ports: ["127.0.0.1:8080:8080"]
     depends_on:
       api: {condition: service_healthy}
       mcp: {condition: service_healthy}
     healthcheck:
-      test: [CMD, /app/.venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=2)"]
+      test: [CMD, /app/.venv/bin/python, -c, "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8080/lab/session', headers={'Host': '127.0.0.1:8080'}), timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [lab]
+
+  frontend:
+    build: ./frontend/apps/lab-console
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      lab-bff: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/"]
       interval: 3s
       timeout: 3s
       retries: 30
     networks: [lab]
 
   mcp:
-    build: .
+    build: ./backend/services/agentgate
     command: [/app/.venv/bin/uvicorn, "agentgate.mcp:create_app", --factory, --host, "0.0.0.0", --port, "8000", --no-access-log]
     environment:
       AGENTGATE_MCP_ENABLED: "1"

@@ -53,7 +53,7 @@ errors and loopback-only Compose exposure remain unchanged.
 The rebuilt running MCP container reported `mcp==2.3.0` and
 `mcp-types==2.3.0`. Eight additional initialization requests against the actual
 Docker endpoint also returned no session identifier. The standalone
-`scripts/mcp_client.py list` discovered exactly the three business tools.
+`tests/e2e/mcp_client.py list` discovered exactly the three business tools.
 All upgrade verification completed without a compatibility failure. This
 security update changes the dependency/lockfile, the session lifecycle
 regression test, this report, the lab guide, the quality-gate report link and
@@ -64,16 +64,16 @@ or Milestone C behavior.
 
 | Verification | Final result |
 | --- | --- |
-| `uv sync --locked --python 3.12` | Passed, 50 resolved packages |
-| `uv run --locked pytest` | **982 passed**, 32.82 seconds; all original 943 plus 39 MCP cases |
-| `uv run --locked ruff check .` | Passed |
-| `uv run --locked ruff format --check .` | Passed, 279 Python files |
-| `uv run --locked mypy --strict src` | Passed, 183 source files |
+| `uv sync --project backend/services/agentgate --locked --python 3.12` | Passed, 50 resolved packages |
+| `uv run --project backend/services/agentgate --locked pytest backend/services/agentgate/tests` | **982 passed**, 32.82 seconds; all original 943 plus 39 MCP cases |
+| `uv run --project backend/services/agentgate --locked ruff check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | Passed |
+| `uv run --project backend/services/agentgate --locked ruff format --check --config backend/services/agentgate/pyproject.toml backend/services/agentgate tests/e2e` | Passed, 279 Python files |
+| `uv run --project backend/services/agentgate --locked mypy --strict backend/services/agentgate/src` | Passed, 183 source files |
 | `openspec validate --all --strict` | Passed, both active changes |
 | Disposable PostgreSQL Compose suite | **17 passed**, 4.28 seconds; original 16 plus one MCP concurrency case |
-| Original `scripts/smoke_lab.py` | Passed, including frontend/Swagger, human rejection and PostgreSQL/API restart |
-| Real `scripts/smoke_mcp.py` | Passed, including real protocol, SQL evidence and API/MCP restart |
-| Standalone `scripts/mcp_client.py list` | Passed against rebuilt SDK 2.3.0 container; exactly three tools |
+| Original `tests/e2e/smoke_lab.py` | Passed, including frontend/Swagger, human rejection and PostgreSQL/API restart |
+| Real `tests/e2e/smoke_mcp.py` | Passed, including real protocol, SQL evidence and API/MCP restart |
+| Standalone `tests/e2e/mcp_client.py list` | Passed against rebuilt SDK 2.3.0 container; exactly three tools |
 | Repeated initialization at actual Docker endpoint | Passed; eight responses without `Mcp-Session-Id` |
 | Generated-secret scan of API/MCP/frontend logs | Passed; compared in memory without printing secrets |
 | `git diff --check` | Passed |
@@ -180,7 +180,7 @@ unchanged. Milestone C/LLM/chat was not implemented.
 | SDK and composition | `pyproject.toml`, `uv.lock`, `src/agentgate/mcp.py`, `src/agentgate/dependencies.py`, `src/agentgate/infrastructure/security/settings.py` |
 | MCP adapter | `src/agentgate/application/ports/mcp_api_gateway.py`, `src/agentgate/infrastructure/gateways/local_mcp_api_gateway.py`, `src/agentgate/features/mcp_ingress/__init__.py`, `src/agentgate/features/mcp_ingress/endpoint.py`, `src/agentgate/features/mcp_ingress/models.py` |
 | Shared transport | `src/agentgate/transport/mcp_security.py`, `src/agentgate/transport/mcp_envelope.py` |
-| Deployment/client | `compose.yaml`, `scripts/start_lab.ps1`, `scripts/mcp_client.py`, `scripts/smoke_mcp.py`, `.github/workflows/ci.yml` |
+| Deployment/client | `compose.yaml`, `scripts/start_lab.ps1`, `tests/e2e/mcp_client.py`, `tests/e2e/smoke_mcp.py`, `.github/workflows/ci.yml` |
 | Tests | `tests/api/test_mcp_ingress.py`, `integration_tests/test_mcp.py` |
 | Documentation | `README.md`, `docs/interactive_lab.md`, `docs/architecture.md`, `docs/threat_model.md`, `docs/final_quality_gates.md`, `docs/milestone_b_verification.md` |
 | Existing OpenSpec change | `openspec/changes/add-interactive-lab/proposal.md`, `design.md`, `tasks.md`, `specs/mcp-ingress/spec.md` |
